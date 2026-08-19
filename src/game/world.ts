@@ -3,8 +3,16 @@ import { drawCross, rr } from "./sprites";
 
 export const SIZE = 3600;
 export const B = 450; // block pitch
-export const RW = 88; // road width
+export const RW = 120; // road width (4 lanes)
 export const HALF = RW / 2;
+export const SIDE = 26; // sidewalk width
+// lane centers (offsets from the road grid line), right-hand traffic:
+export const LANE_SLOW = 22; // near half, lane 1
+export const LANE_FAST = 48; // near half, lane 2
+export const LANE_ON1 = 72; // far half, lane 1
+export const LANE_ON2 = 98; // far half, lane 2
+export const IN0 = RW + SIDE; // interior offset from grid line
+export const IS = B - RW - SIDE * 2; // interior block size
 
 export interface Rect {
   x: number;
@@ -77,9 +85,10 @@ export function genWorld(): WorldData {
 
   for (let j = 0; j < blocksN; j++) {
     for (let i = 0; i < blocksN; i++) {
-      const x0 = i * B + HALF;
-      const y0 = j * B + HALF;
-      const bw = B - RW;
+      // interior of the block: inside sidewalks on all four sides
+      const x0 = i * B + IN0;
+      const y0 = j * B + IN0;
+      const bw = IS;
       if (parkBlocks.some((p) => p.i === i && p.j === j)) {
         parks.push({ x: x0, y: y0, w: bw, h: bw, color: "#2c7a4b", seed: Math.random() });
         const n = 6;
@@ -94,8 +103,8 @@ export function genWorld(): WorldData {
         continue;
       }
       if (isSpecial(i, j)) continue;
-      // normal block: 1-2 buildings inside sidewalk margin
-      const m = 46;
+      // normal block: 1-2 solid buildings with a narrow grass margin
+      const m = 26;
       const split = Math.random() < 0.45;
       if (!split) {
         buildings.push({
@@ -109,65 +118,64 @@ export function genWorld(): WorldData {
       } else {
         const horiz = Math.random() < 0.5;
         if (horiz) {
-          const h1 = (bw - m * 2 - 26) * (0.4 + Math.random() * 0.2);
+          const h1 = (bw - m * 2 - 30) * (0.4 + Math.random() * 0.2);
           buildings.push({ x: x0 + m, y: y0 + m, w: bw - m * 2, h: h1, color: pick(BLD_COLORS), seed: Math.random() });
           buildings.push({
             x: x0 + m,
-            y: y0 + m + h1 + 26,
+            y: y0 + m + h1 + 30,
             w: bw - m * 2,
-            h: bw - m * 2 - h1 - 26,
+            h: bw - m * 2 - h1 - 30,
             color: pick(BLD_COLORS),
             seed: Math.random(),
           });
         } else {
-          const w1 = (bw - m * 2 - 26) * (0.4 + Math.random() * 0.2);
+          const w1 = (bw - m * 2 - 30) * (0.4 + Math.random() * 0.2);
           buildings.push({ x: x0 + m, y: y0 + m, w: w1, h: bw - m * 2, color: pick(BLD_COLORS), seed: Math.random() });
           buildings.push({
-            x: x0 + m + w1 + 26,
+            x: x0 + m + w1 + 30,
             y: y0 + m,
-            w: bw - m * 2 - w1 - 26,
+            w: bw - m * 2 - w1 - 30,
             h: bw - m * 2,
             color: pick(BLD_COLORS),
             seed: Math.random(),
           });
         }
       }
-      // corner trees on sidewalks
+      // corner trees just inside the block (never on road lanes)
       if (Math.random() < 0.7) {
-        const cx = Math.random() < 0.5 ? x0 + 22 : x0 + bw - 22;
-        const cy = Math.random() < 0.5 ? y0 + 22 : y0 + bw - 22;
+        const cx = Math.random() < 0.5 ? x0 + 18 : x0 + bw - 18;
+        const cy = Math.random() < 0.5 ? y0 + 18 : y0 + bw - 18;
         trees.push({ x: cx, y: cy, r: 12 + Math.random() * 5, seed: Math.random() });
       }
     }
   }
 
   // hospital
-  const hx = hospitalBlock.i * B + HALF;
-  const hy = hospitalBlock.j * B + HALF;
-  const hbw = B - RW;
+  const hx = hospitalBlock.i * B + IN0;
+  const hy = hospitalBlock.j * B + IN0;
   const hospital = {
-    bld: { x: hx + 40, y: hy + 90, w: hbw - 80, h: hbw - 130, color: "#e8edf7", seed: 0.5 },
-    bayX: hx + hbw / 2,
-    bayY: hy + 52,
-    bayR: 86,
+    bld: { x: hx + 16, y: hy + 92, w: IS - 32, h: IS - 110, color: "#e8edf7", seed: 0.5 },
+    bayX: hx + IS / 2,
+    bayY: hospitalBlock.j * B + RW + 40,
+    bayR: 84,
   };
   buildings.push(hospital.bld);
 
   // gas stations
   for (const gb of gasBlocks) {
-    const gx = gb.i * B + HALF;
-    const gy = gb.j * B + HALF;
-    const canopy: Rect = { x: gx + 70, y: gy + 120, w: 200, h: 130, color: "#d8dee9", seed: Math.random() };
-    const pump: Rect = { x: gx + 150, y: gy + 165, w: 40, h: 44, color: "#ffcf3f", seed: 0.3 };
+    const gx = gb.i * B + IN0;
+    const gy = gb.j * B + IN0;
+    const canopy: Rect = { x: gx + 36, y: gy + 44, w: 206, h: 120, color: "#d8dee9", seed: Math.random() };
+    const pump: Rect = { x: gx + 118, y: gy + 84, w: 42, h: 46, color: "#ffcf3f", seed: 0.3 };
     buildings.push(canopy);
     buildings.push(pump);
-    gas.push({ x: pump.x + pump.w / 2, y: pump.y + pump.h / 2 + 34, r: 78, canopy, pump });
+    gas.push({ x: pump.x + pump.w / 2, y: pump.y + pump.h + 42, r: 82, canopy, pump });
   }
 
-  // lamps at grid corners offset onto sidewalks
+  // lamps on sidewalks near intersection corners
   for (let j = 0; j <= blocksN; j++) {
     for (let i = 0; i <= blocksN; i++) {
-      lamps.push({ x: i * B + HALF + 16, y: j * B + HALF + 16 });
+      lamps.push({ x: i * B + RW + SIDE / 2, y: j * B + RW + SIDE / 2 });
     }
   }
 
@@ -204,26 +212,41 @@ function makeTile(): HTMLCanvasElement {
     g.fillRect(x, y, 2 + Math.random() * 3, 2 + Math.random() * 3);
   }
 
-  // sidewalks along road edges (left and top of tile)
+  // sidewalks on both sides of every road:
+  // right of this tile's vertical road, left of the next one (x ∈ [B-SIDE, B]),
+  // and the same pair horizontally
   g.fillStyle = "#8f99ad";
-  g.fillRect(RW, 0, 26, B);
-  g.fillRect(0, RW, B, 26);
+  g.fillRect(RW, RW, SIDE, B - RW); // right of left road
+  g.fillRect(B - SIDE, RW, SIDE, B - RW); // left of right road
+  g.fillRect(RW, RW, B - RW, SIDE); // below top road
+  g.fillRect(RW, B - SIDE, B - RW, SIDE); // above bottom road
+  // curb lines
   g.fillStyle = "#7c8598";
-  g.fillRect(RW, 0, 4, B);
-  g.fillRect(0, RW, B, 4);
+  g.fillRect(RW, RW, 4, B - RW);
+  g.fillRect(B - SIDE, RW, 4, B - RW);
+  g.fillRect(RW, RW, B - RW, 4);
+  g.fillRect(RW, B - SIDE, B - RW, 4);
   // sidewalk seams
   g.strokeStyle = "rgba(0,0,0,0.15)";
   g.lineWidth = 1;
-  for (let y = 0; y < B; y += 40) {
+  for (let y = RW; y < B; y += 40) {
     g.beginPath();
     g.moveTo(RW, y);
-    g.lineTo(RW + 26, y);
+    g.lineTo(RW + SIDE, y);
+    g.stroke();
+    g.beginPath();
+    g.moveTo(B - SIDE, y);
+    g.lineTo(B, y);
     g.stroke();
   }
-  for (let x = 0; x < B; x += 40) {
+  for (let x = RW; x < B; x += 40) {
     g.beginPath();
     g.moveTo(x, RW);
-    g.lineTo(x, RW + 26);
+    g.lineTo(x, RW + SIDE);
+    g.stroke();
+    g.beginPath();
+    g.moveTo(x, B - SIDE);
+    g.lineTo(x, B);
     g.stroke();
   }
 
@@ -249,9 +272,9 @@ function makeTile(): HTMLCanvasElement {
   for (let x = RW + 8; x < B; x += 46) g.fillRect(x, HALF - 2, 24, 4);
   // crosswalks at intersection exits
   g.fillStyle = "rgba(240,244,255,0.75)";
-  for (let i = 0; i < 5; i++) {
-    g.fillRect(8 + i * 16, RW + 4, 9, 18); // below intersection, vertical road
-    g.fillRect(RW + 4, 8 + i * 16, 18, 9); // right of intersection, horizontal road
+  for (let i = 0; i < 6; i++) {
+    g.fillRect(10 + i * 18, RW + 5, 10, 20); // below intersection, vertical road
+    g.fillRect(RW + 5, 10 + i * 18, 20, 10); // right of intersection, horizontal road
   }
   // patches & manholes
   g.fillStyle = "rgba(0,0,0,0.18)";

@@ -2,7 +2,21 @@
 import { SFX } from "./audio";
 import { computeStats, getSkin, type SkinDef, type Upgrades } from "./meta";
 import { drawAmbulance, drawCross, drawPatient, drawTrafficCar, drawTree, rr } from "./sprites";
-import { B, drawBuilding, genWorld, isOnRoad, RW, SIZE, type WorldData } from "./world";
+import {
+  B,
+  drawBuilding,
+  genWorld,
+  HALF,
+  isOnRoad,
+  LANE_FAST,
+  LANE_ON1,
+  LANE_ON2,
+  LANE_SLOW,
+  RW,
+  SIDE,
+  SIZE,
+  type WorldData,
+} from "./world";
 
 export interface HudSnap {
   score: number;
@@ -67,13 +81,23 @@ interface Patient {
 interface Car {
   x: number;
   y: number;
-  dir: number;
+  dir: number; // 0 east, 1 south, 2 west, 3 north
+  lane: number; // offset from the road grid line along the fixed axis
   speed: number;
   cruise: number;
   color: string;
   yieldT: number;
   crashCd: number;
 }
+
+// lane offsets per direction (right-hand traffic)
+const laneFor = (dir: number): number => {
+  const inner = Math.random() < 0.5;
+  if (dir === 0) return inner ? LANE_ON1 : LANE_ON2; // east → south half
+  if (dir === 1) return inner ? LANE_SLOW : LANE_FAST; // south → west half
+  if (dir === 2) return inner ? LANE_SLOW : LANE_FAST; // west → north half
+  return inner ? LANE_ON1 : LANE_ON2; // north → east half
+};
 
 interface Powerup {
   x: number;
@@ -234,7 +258,7 @@ export class Game {
     this.fuel = this.stats.fuelMax;
     this.world = genWorld();
     this.px = this.world.hospital.bayX;
-    this.py = 3 * B; // road in front of the hospital
+    this.py = 3 * B + HALF; // middle of the road in front of the hospital
     this.camX = this.px;
     this.camY = this.py;
     this.pattern = this.ctx.createPattern(this.world.tile, "repeat");
@@ -327,6 +351,67 @@ export class Game {
     this.px = clamp(this.px + Math.cos(this.pa) * this.speed * dt, 26, SIZE - 26);
     this.py = clamp(this.py + Math.sin(this.pa) * this.speed * dt, 26, SIZE - 26);
     if (this.px === 26 || this.px === SIZE - 26 || this.py === 26 || this.py === SIZE - 26) this.speed *= 0.6;
+
+    // ----- solid objects: buildings -----
+    const CAR_R = 15;
+    for (const b of this.world.buildings) {
+      if (this.px < b.x - 90 || this.px > b.x + b.w + 90 || this.py < b.y - 90 || this.py > b.y + b.h + 90) continue;
+      const cx = clamp(this.px, b.x, b.x + b.w);
+      const cy = clamp(this.py, b.y, b.y + b.h);
+      const dx = this.px - cx;
+      const dy = this.py - cy;
+      const d2 = dx * dx + dy * dy;
+      if (d2 >= CAR_R * CAR_R) continue;
+      const hard = Math.abs(this.speed) > 130;
+      if (d2 > 0.0001) {
+        const d = Math.sqrt(d2);
+        this.px = cx + (dx / d) * (CAR_R + 0.5);
+        this.py = cy + (dy / d) * (CAR_R + 0.5);
+      } else {
+        // center got inside the rect — eject along the shallowest axis
+        const pl = this.px - b.x;
+        const pr = b.x + b.w - this.px;
+        const pt = this.py - b.y;
+        const pb = b.y + b.h - this.py;
+        const m = Math.min(pl, pr, pt, pb);
+        if (m === pl) this.px = b.x - CAR_R - 0.5;
+        else if (m === pr) this.px = b.x + b.w + CAR_R + 0.5;
+        else if (m === pt) this.py = b.y - CAR_R - 0.5;
+        else this.py = b.y + b.h + CAR_R + 0.5;
+      }
+      this.speed *= hard ? -0.25 : 0.4;
+      if (hard) {
+        this.shake = Math.max(this.shake, 10);
+        this.flashT = Math.max(this.flashT, 0.18);
+        this.sfx.crash();
+        if (this.carrying) {
+          this.carrying.hp = Math.max(1, this.carrying.hp - 7);
+          this.float(this.px, this.py - 56, "-7 ЗДОРОВЬЕ ПАЦИЕНТА", "#ff5063", 13);
+        }
+      } else if (Math.abs(this.speed) > 30) {
+        this.sfx.bump();
+        this.shake = Math.max(this.shake, 3);
+      }
+    }
+
+    // ----- solid objects: trees -----
+    for (const tr of this.world.trees) {
+      const tdx = this.px - tr.x;
+      const tdy = this.py - tr.y;
+      const rad = tr.r * 0.55 + CAR_R - 4;
+      const td2 = tdx * tdx + tdy * tdy;
+      if (td2 >= rad * rad) continue;
+      const td = Math.sqrt(td2);
+      if (td > 0.001) {
+        this.px = tr.x + (tdx / td) * rad;
+        this.py = tr.y + (tdy / td) * rad;
+      } else {
+        this.px = tr.x + rad;
+      }
+      this.speed *= 0.55;
+      this.sfx.bump();
+      this.shake = Math.max(this.shake, 2);
+    }
 
     // skids
     if (Math.abs(steer) > 0 && Math.abs(this.speed) > st.maxSpeed * 0.62) {
@@ -472,6 +557,17 @@ export class Game {
       c.x += d.x * c.speed * dt;
       c.y += d.y * c.speed * dt;
 
+      // strict lane keeping: the fixed axis is always pulled back to its lane,
+      // so cars can never leave the asphalt (even after being bumped)
+      const laneK = Math.min(1, dt * 6);
+      if (c.dir === 1 || c.dir === 3) {
+        const grid = Math.round(c.x / B) * B;
+        c.x += (grid + c.lane - c.x) * laneK;
+      } else {
+        const grid = Math.round(c.y / B) * B;
+        c.y += (grid + c.lane - c.y) * laneK;
+      }
+
       // intersection turning
       if (c.dir === 0) {
         const nx = (Math.floor(c.x / B) + 1) * B;
@@ -518,19 +614,12 @@ export class Game {
     const straight = options[0];
     const choice = Math.random() < 0.62 ? straight : options[1 + Math.floor(Math.random() * (options.length - 1))];
     c.dir = choice;
-    if (choice === 0) {
-      c.x = ix + 2;
-      c.y = iy + 22;
-    } else if (choice === 1) {
-      c.x = ix - 22;
-      c.y = iy + 2;
-    } else if (choice === 2) {
-      c.x = ix - 2;
-      c.y = iy - 22;
-    } else {
-      c.x = ix + 22;
-      c.y = iy - 2;
-    }
+    c.lane = laneFor(choice);
+    // snap the free axis just past the intersection line so the car commits
+    if (choice === 0) c.x = ix + 2;
+    else if (choice === 1) c.y = iy + 2;
+    else if (choice === 2) c.x = ix - 2;
+    else c.y = iy - 2;
   }
 
   private crash() {
@@ -780,23 +869,33 @@ export class Game {
   // ----- spawners -----
   private spawnPatient(initial: boolean) {
     const blocksN = SIZE / B;
+    const walk = RW + SIDE / 2; // middle of the sidewalk
     for (let attempt = 0; attempt < 20; attempt++) {
       const bi = Math.floor(rnd(0, blocksN));
       const bj = Math.floor(rnd(0, blocksN));
-      const x0 = bi * B + RW / 2;
-      const y0 = bj * B + RW / 2;
-      const inner = B - RW;
+      // patients wait on sidewalks along one of the four block edges
       const side = Math.floor(rnd(0, 4));
-      const t = rnd(30, inner - 30);
-      const inset = rnd(10, 22);
-      let x = x0 + t;
-      let y = y0 + t;
-      if (side === 0) y = y0 + inset;
-      else if (side === 1) y = y0 + inner - inset;
-      else if (side === 2) x = x0 + inset;
-      else x = x0 + inner - inset;
+      const along = rnd(RW + 40, B - 40);
+      let x: number;
+      let y: number;
+      if (side === 0) {
+        x = bi * B + along;
+        y = bj * B + walk;
+      } else if (side === 1) {
+        x = bi * B + along;
+        y = (bj + 1) * B - SIDE / 2;
+      } else if (side === 2) {
+        x = bi * B + walk;
+        y = bj * B + along;
+      } else {
+        x = (bi + 1) * B - SIDE / 2;
+        y = bj * B + along;
+      }
+      if (x < 60 || x > SIZE - 60 || y < 60 || y > SIZE - 60) continue;
       if (!initial && dist(x, y, this.px, this.py) < 520) continue;
       if (this.patients.some((p) => dist(p.x, p.y, x, y) < 160)) continue;
+      if (this.world.trees.some((t) => dist(t.x, t.y, x, y) < 46)) continue;
+      if (this.world.buildings.some((b) => x > b.x - 30 && x < b.x + b.w + 30 && y > b.y - 30 && y < b.y + b.h + 30)) continue;
       const d = DIAGS[Math.floor(Math.random() * Math.min(DIAGS.length, 3 + this.level))];
       const p: Patient = {
         id: this.patientId++,
@@ -831,11 +930,11 @@ export class Game {
       if (horiz) {
         dir = Math.random() < 0.5 ? 0 : 2;
         x = along;
-        y = grid + (dir === 0 ? 22 : -22);
+        y = grid + laneFor(dir);
       } else {
         dir = Math.random() < 0.5 ? 1 : 3;
         y = along;
-        x = grid + (dir === 1 ? -22 : 22);
+        x = grid + laneFor(dir);
       }
       if (x < 40 || x > SIZE - 40 || y < 40 || y > SIZE - 40) continue;
       if (dist(x, y, this.px, this.py) < (initial ? 420 : 560)) continue;
@@ -844,6 +943,7 @@ export class Game {
         x,
         y,
         dir,
+        lane: horiz ? y - grid : x - grid,
         speed: rnd(60, 110),
         cruise: rnd(95, 150),
         color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)],
