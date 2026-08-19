@@ -90,15 +90,29 @@ export function drawAmbulance(
     }
     ctx.restore();
   }
+  if (skin.pattern === "shine") {
+    ctx.save();
+    rr(ctx, -38, -19, 76, 38, 9);
+    ctx.clip();
+    ctx.fillStyle = "rgba(255,255,255,0.42)";
+    ctx.save();
+    ctx.rotate(-0.5);
+    ctx.fillRect(-18, -60, 10, 120);
+    ctx.fillRect(4, -60, 5, 120);
+    ctx.restore();
+    ctx.restore();
+  }
 
   ctx.strokeStyle = "rgba(10,14,26,0.55)";
   ctx.lineWidth = 2;
   rr(ctx, -38, -19, 76, 38, 9);
   ctx.stroke();
 
-  // stripe
-  ctx.fillStyle = skin.stripe;
-  ctx.fillRect(-38, -6, 60, 12);
+  // stripe (solid paints only — patterned skins wear their fur instead)
+  if (!skin.pattern) {
+    ctx.fillStyle = skin.stripe;
+    ctx.fillRect(-38, -6, 60, 12);
+  }
   // star of life (simplified cross in circle)
   ctx.fillStyle = skin.body;
   ctx.beginPath();

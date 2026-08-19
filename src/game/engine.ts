@@ -299,6 +299,21 @@ export class Game {
     }
   }
 
+  /** Rewarded-ad continue: revive the same run with one life and a full tank. */
+  continueRun() {
+    if (this.state !== "over") return;
+    this.state = "run";
+    this.lives = 1;
+    this.fuel = this.stats.fuelMax;
+    this.stallToasted = false;
+    this.flashT = 0;
+    this.last = performance.now();
+    this.sfx.powerup();
+    this.ring(this.px, this.py, "#3ddc6b");
+    this.cb.onToast({ text: "Бак полон — смена продолжается!", kind: "good" });
+    this.emitHud();
+  }
+
   destroy() {
     this.destroyed = true;
     cancelAnimationFrame(this.raf);
@@ -894,7 +909,10 @@ export class Game {
         y = bj * B + along;
       }
       if (x < 60 || x > SIZE - 60 || y < 60 || y > SIZE - 60) continue;
-      if (!initial && dist(x, y, this.px, this.py) < 520) continue;
+      // pressure ramp-up: calls appear further and further away as the shift drags on
+      const minD = initial ? 0 : Math.min(1700, 460 + (this.level - 1) * 170 + this.time * 1.6);
+      const need = attempt > 12 ? 0 : minD;
+      if (!initial && dist(x, y, this.px, this.py) < need) continue;
       if (this.patients.some((p) => dist(p.x, p.y, x, y) < 160)) continue;
       if (this.world.trees.some((t) => dist(t.x, t.y, x, y) < 46)) continue;
       if (this.world.buildings.some((b) => x > b.x - 30 && x < b.x + b.w + 30 && y > b.y - 30 && y < b.y + b.h + 30)) continue;
@@ -907,7 +925,8 @@ export class Game {
         label: d.label,
         drain: d.drain,
         mult: d.mult,
-        hp: 100,
+        // later shifts start with weaker patients — upgrades become mandatory
+        hp: clamp(105 - (this.level - 1) * 8, 55, 100),
         seed: Math.random(),
         born: this.time,
       };

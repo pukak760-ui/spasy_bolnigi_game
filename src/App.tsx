@@ -1,7 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { showFullscreenAdv, showRewardedVideo, initYandexSDK } from "./game/ads";
 import { SFX } from "./game/audio";
 import { Game, type GameStats, type HudSnap, type Toast } from "./game/engine";
-import { loadMeta, MAX_LVL, saveMeta, SKINS, UPGRADE_DEFS, type MetaState, type Upgrades } from "./game/meta";
+import {
+  ACH_BY_ID,
+  checkAchievements,
+  loadMeta,
+  MAX_LVL,
+  saveMeta,
+  SKINS,
+  skinUnlocked,
+  UPGRADE_DEFS,
+  type AchievementDef,
+  type MetaState,
+  type Upgrades,
+} from "./game/meta";
 import Hud from "./ui/Hud";
 import { Garage, GameOverOverlay, HowTo, MainMenu, PauseOverlay } from "./ui/Screens";
 
@@ -13,13 +26,19 @@ interface ToastItem extends Toast {
   id: number;
 }
 
+const REWARD_WINDOW_MS = 4000;
+
 // ================= in-game screen =================
 function GameScreen({
   meta,
   muted,
   best,
   isRecord,
+  rewardActive,
+  rewardKey,
+  newAchs,
   onGameOver,
+  onContinueAd,
   onRestart,
   onQuit,
   onGarage,
@@ -29,7 +48,11 @@ function GameScreen({
   muted: boolean;
   best: number;
   isRecord: boolean;
+  rewardActive: boolean;
+  rewardKey: number;
+  newAchs: AchievementDef[];
   onGameOver: (s: GameStats) => void;
+  onContinueAd: () => Promise<boolean>;
   onRestart: () => void;
   onQuit: () => void;
   onGarage: () => void;
@@ -41,6 +64,7 @@ function GameScreen({
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [paused, setPaused] = useState(false);
   const [over, setOver] = useState<GameStats | null>(null);
+  const [adBusy, setAdBusy] = useState(false);
   const toastId = useRef(1);
   const overRef = useRef(false);
 
@@ -90,6 +114,20 @@ function GameScreen({
     engineRef.current?.setPaused(paused);
   }, [paused]);
 
+  const handleContinueAd = useCallback(() => {
+    if (adBusy) return Promise.resolve(false);
+    setAdBusy(true);
+    return onContinueAd().then((ok) => {
+      setAdBusy(false);
+      if (ok) {
+        engineRef.current?.continueRun();
+        overRef.current = false;
+        setOver(null);
+      }
+      return ok;
+    });
+  }, [adBusy, onContinueAd]);
+
   const toastColor = (k: Toast["kind"]) =>
     k === "good"
       ? { border: "#1f6e4a", color: "#5dff9e" }
@@ -135,6 +173,11 @@ function GameScreen({
           stats={over}
           best={best}
           isRecord={isRecord}
+          rewardActive={rewardActive}
+          rewardBusy={adBusy}
+          rewardKey={rewardKey}
+          newAchs={newAchs}
+          onContinueAd={() => void handleContinueAd()}
           onRetry={onRestart}
           onGarage={onGarage}
           onMenu={onQuit}
@@ -149,22 +192,72 @@ export default function App() {
   const [screen, setScreen] = useState<ScreenId>("menu");
   const [meta, setMeta] = useState<MetaState>(() => loadMeta());
   const [runId, setRunId] = useState(0);
-  const [lastStats, setLastStats] = useState<GameStats | null>(null);
   const [isRecord, setIsRecord] = useState(false);
+  const [rewardOn, setRewardOn] = useState(false);
+  const [rewardKey, setRewardKey] = useState(0);
+  const [newAchs, setNewAchs] = useState<AchievementDef[]>([]);
+
+  const metaRef = useRef(meta);
+  metaRef.current = meta;
+  const statsRef = useRef<GameStats | null>(null);
+  const finalizedRef = useRef(false);
+  const rewardTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     saveMeta(meta);
     sfx.muted = meta.muted;
   }, [meta]);
 
+  // Yandex Games SDK init (no-op outside the platform)
+  useEffect(() => {
+    void initYandexSDK();
+  }, []);
+
+  const clearRewardTimer = useCallback(() => {
+    if (rewardTimerRef.current !== null) {
+      window.clearTimeout(rewardTimerRef.current);
+      rewardTimerRef.current = null;
+    }
+  }, []);
+
+  /** Counts the shift as finished: achievements, totals, interstitial every 3rd. */
+  const finalizeShift = useCallback(() => {
+    if (finalizedRef.current) return;
+    const s = statsRef.current;
+    if (!s) return;
+    finalizedRef.current = true;
+
+    const m: MetaState = {
+      ...metaRef.current,
+      shiftsTotal: metaRef.current.shiftsTotal + 1,
+      bestShiftSaved: Math.max(metaRef.current.bestShiftSaved, s.rescued),
+      bestShiftTime: Math.max(metaRef.current.bestShiftTime, s.timeSec),
+      totalEarned: metaRef.current.totalEarned + Math.max(0, s.moneyDelta),
+      totalPlayTime: metaRef.current.totalPlayTime + s.timeSec,
+    };
+    const fresh = checkAchievements(m);
+    setNewAchs(fresh.map((id) => ACH_BY_ID[id]).filter(Boolean));
+    if (fresh.length) sfx.levelup();
+    setMeta(m);
+
+    // strict Yandex rule: fullscreen interstitial after every 3rd completed shift
+    if (m.shiftsTotal % 3 === 0) {
+      showFullscreenAdv(() => undefined);
+    }
+  }, []);
+
   const startGame = useCallback(() => {
     sfx.unlock();
     sfx.click();
-    setLastStats(null);
     setIsRecord(false);
+    setNewAchs([]);
+    setRewardOn(false);
+    clearRewardTimer();
+    statsRef.current = null;
+    finalizedRef.current = false;
     setRunId((r) => r + 1);
     setScreen("game");
-  }, []);
+  }, [clearRewardTimer]);
 
   // Enter to start from menu
   useEffect(() => {
@@ -177,46 +270,78 @@ export default function App() {
 
   const handleGameOver = useCallback(
     (s: GameStats) => {
-      setIsRecord(s.score > 0 && s.score > meta.best);
+      statsRef.current = s;
+      finalizedRef.current = false;
+      setIsRecord(s.score > 0 && s.score > metaRef.current.best);
+      // bank the run earnings & records immediately (they persist either way)
       setMeta((m) => ({
         ...m,
         money: Math.max(0, m.money + s.moneyDelta),
         best: Math.max(m.best, s.score),
         savedTotal: m.savedTotal + s.rescued,
       }));
+      // 4-second rewarded window
+      setRewardOn(true);
+      setRewardKey((k) => k + 1);
+      clearRewardTimer();
+      rewardTimerRef.current = window.setTimeout(() => {
+        setRewardOn(false);
+        finalizeShift();
+      }, REWARD_WINDOW_MS);
     },
-    [meta.best]
+    [clearRewardTimer, finalizeShift]
   );
 
-  const buyUpgrade = useCallback(
-    (k: keyof Upgrades) => {
-      const def = UPGRADE_DEFS.find((d) => d.key === k);
-      if (!def) return;
-      const lvl = meta.upgrades[k];
-      if (lvl >= MAX_LVL) return;
-      const cost = def.costs[lvl];
-      if (meta.money < cost) {
-        sfx.deny();
-        return;
-      }
-      sfx.buy();
-      setMeta((m) => ({ ...m, money: m.money - cost, upgrades: { ...m.upgrades, [k]: lvl + 1 } }));
+  /** Rewarded video → refill fuel and keep the same run going. */
+  const handleContinueAd = useCallback((): Promise<boolean> => {
+    return new Promise((resolve) => {
+      showRewardedVideo({
+        onRewarded: () => {
+          // player committed to continue: the shift is NOT finalized
+          clearRewardTimer();
+          setRewardOn(false);
+          sfx.cash();
+          resolve(true);
+        },
+        onFail: () => resolve(false),
+      });
+    });
+  }, [clearRewardTimer]);
+
+  const leaveRun = useCallback(
+    (next: ScreenId) => {
+      finalizeShift();
+      setRewardOn(false);
+      clearRewardTimer();
+      setScreen(next);
     },
-    [meta]
+    [clearRewardTimer, finalizeShift]
   );
 
-  const chooseSkin = useCallback(
-    (id: string) => {
-      const s = SKINS.find((x) => x.id === id);
-      if (!s || meta.savedTotal < s.needSaved) {
-        sfx.deny();
-        return;
-      }
-      sfx.click();
-      setMeta((m) => ({ ...m, skin: id }));
-    },
-    [meta.savedTotal]
-  );
+  const buyUpgrade = useCallback((k: keyof Upgrades) => {
+    const def = UPGRADE_DEFS.find((d) => d.key === k);
+    if (!def) return;
+    const m = metaRef.current;
+    const lvl = m.upgrades[k];
+    if (lvl >= MAX_LVL) return;
+    const cost = def.costs[lvl];
+    if (m.money < cost) {
+      sfx.deny();
+      return;
+    }
+    sfx.buy();
+    setMeta((prev) => ({ ...prev, money: prev.money - cost, upgrades: { ...prev.upgrades, [k]: lvl + 1 } }));
+  }, []);
+
+  const chooseSkin = useCallback((id: string) => {
+    const s = SKINS.find((x) => x.id === id);
+    if (!s || !skinUnlocked(metaRef.current, s)) {
+      sfx.deny();
+      return;
+    }
+    sfx.click();
+    setMeta((m) => ({ ...m, skin: id }));
+  }, []);
 
   const toggleMute = useCallback(() => {
     setMeta((m) => {
@@ -267,10 +392,14 @@ export default function App() {
       muted={meta.muted}
       best={meta.best}
       isRecord={isRecord}
+      rewardActive={rewardOn}
+      rewardKey={rewardKey}
+      newAchs={newAchs}
       onGameOver={handleGameOver}
+      onContinueAd={handleContinueAd}
       onRestart={startGame}
-      onQuit={() => setScreen("menu")}
-      onGarage={() => setScreen("garage")}
+      onQuit={() => leaveRun("menu")}
+      onGarage={() => leaveRun("garage")}
       onToggleMute={toggleMute}
     />
   );

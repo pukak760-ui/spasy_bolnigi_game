@@ -134,6 +134,14 @@ canvas { display: block; }
 @keyframes screenFlash { 0% { opacity: 0.55; } 100% { opacity: 0; } }
 .flash-red { animation: screenFlash 0.5s ease-out both; background: #ff2038; }
 
+@keyframes rewardDrain {
+  from { width: 100%; }
+  to { width: 0%; }
+}
+.reward-drain {
+  animation: rewardDrain 4s linear forwards;
+}
+
 @keyframes heartBeat {
   0%, 100% { transform: scale(1); }
   12% { transform: scale(1.28); }

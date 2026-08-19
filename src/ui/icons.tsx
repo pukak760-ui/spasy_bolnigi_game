@@ -120,3 +120,21 @@ export const IconWheel = ({ className }: P) => (
     <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 2c4 0 7.3 2.9 7.9 6.7-2.3-1-5-1.5-7.9-1.5s-5.6.5-7.9 1.5C4.7 6.9 8 4 12 4zm-7.9 8.9C6 12.3 8.9 12 12 12s6 .3 7.9.9A8 8 0 0 1 12 20a8 8 0 0 1-7.9-7.1zM12 10.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z" />
   </svg>
 );
+
+export const IconMedal = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={className} fill="currentColor">
+    <path d="m6 2 3.5 7.2a6.5 6.5 0 0 0-2.4 1.6L2.8 4.5 6 2zm12 0 3.2 2.5-4.3 6.3a6.5 6.5 0 0 0-2.4-1.6L18 2zM12 8a6 6 0 1 1 0 12 6 6 0 0 1 0-12zm0 3.2-1 2-2.2.3 1.6 1.6-.4 2.2 2-1 2 1-.4-2.2 1.6-1.6-2.2-.3-1-2z" />
+  </svg>
+);
+
+export const IconCheck = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m4.5 12.8 4.8 4.7L19.5 6.7" />
+  </svg>
+);
+
+export const IconLock = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={className} fill="currentColor">
+    <path d="M12 2a5 5 0 0 1 5 5v3h1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h1V7a5 5 0 0 1 5-5zm0 2a3 3 0 0 0-3 3v3h6V7a3 3 0 0 0-3-3zm0 9a1.8 1.8 0 0 0-.9 3.4V18a.9.9 0 0 0 1.8 0v-1.6A1.8 1.8 0 0 0 12 13z" />
+  </svg>
+);

@@ -1,16 +1,30 @@
 // ---- menu, how-to, garage, pause & game-over screens ----
 import { useEffect, useState, type ReactNode } from "react";
 import type { GameStats, HudSnap } from "../game/engine";
-import { MAX_LVL, SKINS, UPGRADE_DEFS, type MetaState, type Upgrades } from "../game/meta";
+import {
+  ACHIEVEMENTS,
+  ACH_BY_ID,
+  achValue,
+  MAX_LVL,
+  SKINS,
+  skinUnlocked,
+  UPGRADE_DEFS,
+  type AchievementDef,
+  type MetaState,
+  type Upgrades,
+} from "../game/meta";
 import MenuScene from "./MenuScene";
 import {
   IconArrowLeft,
   IconBrake,
+  IconCheck,
   IconCross,
   IconEngine,
   IconFuel,
   IconHeart,
   IconHome,
+  IconLock,
+  IconMedal,
   IconMedkit,
   IconPlay,
   IconRefresh,
@@ -43,6 +57,20 @@ function fmtTime(sec: number) {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function fmtDur(sec: number) {
+  if (sec < 60) return `${sec}с`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  if (m < 60) return s ? `${m}м ${s}с` : `${m}м`;
+  return `${Math.floor(m / 60)}ч ${m % 60}м`;
+}
+
+function fmtTarget(a: AchievementDef) {
+  if (a.metric === "totalEarned") return `${a.target.toLocaleString("ru-RU")}₽`;
+  if (a.metric === "bestShiftTime" || a.metric === "totalPlayTime") return fmtDur(a.target);
+  return String(a.target);
 }
 
 // ================= MAIN MENU =================
@@ -97,7 +125,7 @@ export function MainMenu({
 
           <p className="mt-4 max-w-lg text-[15px] leading-relaxed text-[#c3d0ee]">
             Гоняй на скорой по ночному городу, забирай пациентов с вызовов и довози их до больницы живыми.
-            Пробки, бензин на нуле и три жизни на смену — успей всех.
+            С каждой сменой больные дальше и слабее — прокачивай машину, открывай редкие раскраски и ставь рекорды.
           </p>
 
           <div className="mt-7 flex flex-wrap items-center gap-4">
@@ -149,6 +177,14 @@ export function MainMenu({
                   <IconHeart className="h-4 w-4 text-[#ff3b4e]" /> Всего спасено
                 </span>
                 <span className="font-disp text-xl text-white">{meta.savedTotal}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-[13px] font-semibold text-[#c3d0ee]">
+                  <IconMedal className="h-4 w-4 text-[#25e8c8]" /> Достижения
+                </span>
+                <span className="font-disp text-xl text-white">
+                  {meta.achievements.length}<span className="text-[13px] text-[#8fa0c8]">/{ACHIEVEMENTS.length}</span>
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-2 text-[13px] font-semibold text-[#c3d0ee]">
@@ -212,7 +248,8 @@ export function HowTo({ onBack }: { onBack: () => void }) {
           <p className="mt-2 text-[15px] leading-relaxed text-[#c3d0ee]">
             По городу появляются больные — забирай их скорой и довози до площадки <b className="text-[#25e8c8]">«ПРИЁМ»</b> у
             больницы. У каждого тает здоровье: не успел — пациент потерян, а это одна из <b className="text-[#ff5d70]">3 жизней</b>.
-            Спасай как можно больше и зарабатывай на прокачку машины. Смена бесконечная, пока не кончатся жизни.
+            Смена бесконечная, пока не кончатся жизни, — и с каждой новой сменой вызовы всё дальше, а больные всё слабее.
+            Прокачка машины — не роскошь, а необходимость.
           </p>
         </div>
 
@@ -247,12 +284,12 @@ export function HowTo({ onBack }: { onBack: () => void }) {
             {
               icon: <IconCross className="h-5 w-5 text-[#ff5d70]" />,
               t: "Вызовы",
-              d: "Красная стрелка у машины и метка на карте ведут к ближайшему больному. Ждать вечно никто не будет — спеши.",
+              d: "Красная стрелка у машины и метка на карте ведут к ближайшему больному. Чем дальше — тем меньше времени.",
             },
             {
               icon: <IconHeart className="h-5 w-5 text-[#3ddc6b]" />,
               t: "Здоровье пациента",
-              d: "Полоска тает всё время, в машине медленнее. Аварии отнимают −11. Аптечки на дорогах лечат +24.",
+              d: "Полоска тает всё время, в машине медленнее. Аварии отнимают −11, столкновение со стеной −7. Аптечки на дорогах лечат +24.",
             },
             {
               icon: <IconFuel className="h-5 w-5 text-[#ffcf3f]" />,
@@ -272,7 +309,17 @@ export function HowTo({ onBack }: { onBack: () => void }) {
             {
               icon: <IconRefresh className="h-5 w-5 text-[#25e8c8]" />,
               t: "Смены и ночь",
-              d: "Каждые 4 спасённых — новая смена: вызовы чаще, диагнозы тяжелее, трафик плотнее. Ночью темнеет — фары в помощь.",
+              d: "Каждые 4 спасённых — новая смена: вызовы чаще и дальше, пациенты слабее, трафик плотнее. Ночью темнеет — фары в помощь.",
+            },
+            {
+              icon: <IconMedal className="h-5 w-5 text-[#ffcf3f]" />,
+              t: "Достижения и скины",
+              d: "Спасай больных, держись дольше, зарабатывай — открывай достижения и редкие раскраски: Тигр, Зебра, Божья коровка, Золотая.",
+            },
+            {
+              icon: <IconPlay className="h-5 w-5 text-[#5dff9e]" />,
+              t: "Второй шанс",
+              d: "После провала смены успей нажать «Продолжить за рекламу» (4 секунды!) — бак наполнится, и смена продолжится с тем же счётом.",
             },
           ].map((c, i) => (
             <div key={i} className="panel-cut p-4 transition hover:border-[#3d558f]">
@@ -286,10 +333,10 @@ export function HowTo({ onBack }: { onBack: () => void }) {
         </div>
 
         <div className="panel-cut mt-5 border-l-4 border-l-[#ffcf3f] p-5">
-          <div className="font-disp text-sm tracking-widest text-[#ffcf3f]">СОВЕТ БРИГААДИРА</div>
+          <div className="font-disp text-sm tracking-widest text-[#ffcf3f]">СОВЕТ БРИГАДИРА</div>
           <p className="mt-2 text-[14px] leading-relaxed text-[#c3d0ee]">
-            Не лети через дворы — по траве машина тащится еле-еле. Держись дорог, гуди на перекрёстках и следи за баком:
-            пустая скорая ползёт со скоростью пешехода.
+            Не лети через дворы — по траве машина тащится еле-еле, а здания и деревья твёрдые. Держись дорог, гуди на
+            перекрёстках и следи за баком: пустая скорая ползёт со скоростью пешехода.
           </p>
         </div>
       </div>
@@ -312,7 +359,7 @@ export function Garage({
   return (
     <div className="relative h-full w-full overflow-y-auto bg-[#0a1020]">
       <div className="hazard absolute left-0 right-0 top-0 z-10 h-2.5" />
-      <div className="mx-auto my-8 w-full max-w-5xl px-6 pb-16">
+      <div className="mx-auto my-8 w-full max-w-6xl px-6 pb-16">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-disp text-4xl text-white [text-shadow:0_4px_0_#0a1226]">
             ГАРАЖ <span className="text-[#ffcf3f]">«03»</span>
@@ -330,7 +377,7 @@ export function Garage({
           </div>
         </div>
 
-        <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+        <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
           {/* upgrades */}
           <div className="flex flex-col gap-3">
             <div className="font-disp text-sm tracking-widest text-[#8fa0c8]">ПРОКАЧКА МАШИНЫ</div>
@@ -385,37 +432,137 @@ export function Garage({
                 </div>
               );
             })}
+
+            {/* achievements */}
+            <div className="mt-3 font-disp text-sm tracking-widest text-[#8fa0c8]">
+              ДОСТИЖЕНИЯ · {meta.achievements.length}/{ACHIEVEMENTS.length}
+            </div>
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              {ACHIEVEMENTS.map((a) => {
+                const got = meta.achievements.includes(a.id);
+                const val = Math.min(achValue(meta, a.metric), a.target);
+                const prog = val / a.target;
+                return (
+                  <div
+                    key={a.id}
+                    className={`panel-cut p-3.5 ${got ? "!border-[#2f9e63]" : ""}`}
+                    style={got ? { boxShadow: "0 0 18px rgba(61,220,107,0.15)" } : undefined}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center ${got ? "bg-[#3ddc6b]" : "bg-[#232f52]"}`}
+                        style={{ clipPath: "polygon(5px 0,100% 0,100% calc(100% - 5px),calc(100% - 5px) 100%,0 100%,0 5px)" }}
+                      >
+                        {got ? (
+                          <IconCheck className="h-4.5 w-4.5 text-[#0a2818]" />
+                        ) : (
+                          <IconMedal className="h-4.5 w-4.5 text-[#5a6a94]" />
+                        )}
+                      </span>
+                      <div className="min-w-0">
+                        <div className={`font-disp text-[13px] ${got ? "text-[#5dff9e]" : "text-white"}`}>{a.name}</div>
+                        <div className="truncate text-[11px] text-[#a9b8dc]">
+                          {a.desc}
+                          {a.skin && (
+                            <span className="text-[#ffe27a]"> · скин «{SKINS.find((s) => s.id === a.skin)?.name}»</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    {!got && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <div className="bar-track h-2 flex-1">
+                          <div className="bar-fill" style={{ width: `${Math.max(3, prog * 100)}%`, background: "#7fb2ff" }} />
+                        </div>
+                        <span className="text-[10px] font-bold text-[#8fa0c8]">
+                          {val}/{fmtTarget(a)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {/* skins */}
           <div className="flex flex-col gap-3">
             <div className="font-disp text-sm tracking-widest text-[#8fa0c8]">РАСКРАСКА</div>
             {SKINS.map((s) => {
-              const locked = meta.savedTotal < s.needSaved;
+              const unlocked = skinUnlocked(meta, s);
               const active = meta.skin === s.id;
               return (
                 <button
                   key={s.id}
                   onClick={() => onSkin(s.id)}
-                  disabled={locked}
+                  disabled={!unlocked}
                   className={`panel-cut relative flex items-center gap-4 p-3.5 text-left transition ${
                     active ? "!border-[#25e8c8]" : "hover:border-[#3d558f]"
-                  } ${locked ? "opacity-100" : "cursor-pointer"}`}
+                  } ${unlocked ? "cursor-pointer" : "opacity-100"}`}
                 >
                   <div
                     className="relative h-12 w-24 shrink-0 overflow-hidden"
                     style={{ background: s.body, clipPath: "polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px)" }}
                   >
-                    <div className="absolute left-0 top-1/2 h-3 w-full -translate-y-1/2" style={{ background: s.stripe }} />
+                    {s.pattern === "tiger" &&
+                      [8, 26, 44, 62, 80].map((lx, i) => (
+                        <div
+                          key={lx}
+                          className="absolute top-0 h-full w-2.5"
+                          style={{ left: lx, background: "#17120a", transform: `rotate(${i % 2 ? 14 : -14}deg)` }}
+                        />
+                      ))}
+                    {s.pattern === "zebra" &&
+                      [6, 22, 38, 54, 70, 86].map((lx, i) => (
+                        <div
+                          key={lx}
+                          className="absolute top-0 h-full w-2"
+                          style={{ left: lx, background: "#141414", transform: `rotate(${i % 2 ? -18 : 18}deg)` }}
+                        />
+                      ))}
+                    {s.pattern === "dots" &&
+                      [
+                        [14, 10], [42, 30], [70, 12], [30, 36], [60, 38], [86, 30],
+                      ].map(([dx, dy], i) => (
+                        <div
+                          key={i}
+                          className="absolute h-3 w-3 rounded-full bg-[#14100f]"
+                          style={{ left: dx, top: dy }}
+                        />
+                      ))}
+                    {s.pattern === "shine" && (
+                      <div
+                        className="absolute top-[-10px] h-[70px] w-4 bg-[rgba(255,255,255,0.45)]"
+                        style={{ left: 40, transform: "rotate(24deg)" }}
+                      />
+                    )}
+                    {!s.pattern && (
+                      <div className="absolute left-0 top-1/2 h-3 w-full -translate-y-1/2" style={{ background: s.stripe }} />
+                    )}
                     <div className="absolute left-3 top-1/2 h-6 w-6 -translate-y-1/2 rounded-full bg-white" />
                     <div className="absolute left-[18px] top-1/2 h-3.5 w-1 -translate-y-1/2" style={{ background: "#2e6bff" }} />
                     <div className="absolute left-4 top-1/2 h-1 w-3.5 -translate-y-1/2" style={{ background: "#2e6bff" }} />
+                    {!unlocked && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-[rgba(6,10,22,0.72)]">
+                        <IconLock className="h-5 w-5 text-[#8fa0c8]" />
+                      </div>
+                    )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="font-disp text-[14px] text-white">{s.name}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-disp text-[14px] text-white">{s.name}</span>
+                      {s.rare && (
+                        <span
+                          className="bg-[#ffcf3f] px-1.5 py-0.5 text-[9px] font-black tracking-wider text-[#231a00]"
+                          style={{ clipPath: "polygon(4px 0,100% 0,calc(100% - 4px) 100%,0 100%)" }}
+                        >
+                          РЕДКАЯ
+                        </span>
+                      )}
+                    </div>
                     <div className="text-[11px] text-[#a9b8dc]">
-                      {locked ? (
-                        <span className="text-[#ff8b98]">Спаси ещё {s.needSaved - meta.savedTotal} пациентов</span>
+                      {!unlocked && s.ach ? (
+                        <span className="text-[#ff8b98]">Достижение: {ACH_BY_ID[s.ach]?.name}</span>
                       ) : active ? (
                         <span className="text-[#25e8c8]">Выбрана</span>
                       ) : (
@@ -507,6 +654,11 @@ export function GameOverOverlay({
   stats,
   best,
   isRecord,
+  rewardActive,
+  rewardBusy,
+  rewardKey,
+  newAchs,
+  onContinueAd,
   onRetry,
   onGarage,
   onMenu,
@@ -514,13 +666,18 @@ export function GameOverOverlay({
   stats: GameStats;
   best: number;
   isRecord: boolean;
+  rewardActive: boolean;
+  rewardBusy: boolean;
+  rewardKey: number;
+  newAchs: AchievementDef[];
+  onContinueAd: () => void;
   onRetry: () => void;
   onGarage: () => void;
   onMenu: () => void;
 }) {
   return (
     <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(6,4,12,0.85)]">
-      <div className="panel-cut pop-in w-[540px] max-w-[94vw] overflow-hidden">
+      <div className="panel-cut pop-in max-h-[96vh] w-[560px] max-w-[94vw] overflow-y-auto">
         <div className="hazard h-3" />
         <div className="p-8">
           <div className="flex items-center justify-center gap-3">
@@ -537,6 +694,27 @@ export function GameOverOverlay({
             <div className="pop-in mx-auto mt-4 flex w-fit items-center gap-2 bg-[#ffcf3f] px-4 py-1.5" style={{ clipPath: "polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%)" }}>
               <IconStar className="h-4 w-4 text-[#231a00]" />
               <span className="font-disp text-sm text-[#231a00]">НОВЫЙ РЕКОРД!</span>
+            </div>
+          )}
+
+          {newAchs.length > 0 && (
+            <div className="mt-4 flex flex-col gap-1.5">
+              {newAchs.map((a, i) => (
+                <div
+                  key={a.id}
+                  className="pop-in flex items-center gap-2.5 border border-[#2f9e63] bg-[rgba(61,220,107,0.1)] px-3.5 py-2"
+                  style={{ animationDelay: `${i * 0.12}s`, clipPath: "polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)" }}
+                >
+                  <IconMedal className="h-5 w-5 shrink-0 text-[#ffcf3f]" />
+                  <div className="min-w-0">
+                    <div className="font-disp text-[13px] text-[#5dff9e]">ДОСТИЖЕНИЕ: {a.name}</div>
+                    <div className="truncate text-[11px] text-[#a9b8dc]">
+                      {a.desc}
+                      {a.skin && <span className="text-[#ffe27a]"> · открыт скин «{SKINS.find((s) => s.id === a.skin)?.name}»</span>}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
@@ -559,6 +737,28 @@ export function GameOverOverlay({
           </div>
 
           <div className="mt-6 flex flex-col gap-3">
+            {/* rewarded continue — visible for 4 seconds only */}
+            {rewardActive && (
+              <div key={rewardKey} className="relative">
+                <button
+                  className="btn-game btn-yellow w-full !py-4 !text-lg"
+                  disabled={rewardBusy}
+                  onClick={onContinueAd}
+                >
+                  <span className="flex items-center justify-center gap-2.5">
+                    <IconFuel className="h-5 w-5" />
+                    {rewardBusy ? "ПОКАЗЫВАЕМ РЕКЛАМУ..." : "ПРОДОЛЖИТЬ ЗА РЕКЛАМУ — БАК ПОЛНЫЙ"}
+                  </span>
+                </button>
+                <div className="mt-1.5 h-1.5 w-full overflow-hidden bg-[#0a1122]">
+                  <div key={`bar-${rewardKey}`} className="reward-drain h-full bg-[#f2b70a]" />
+                </div>
+                <div className="mt-1 text-center text-[10px] font-bold tracking-widest text-[#8fa0c8]">
+                  ПРЕДЛОЖЕНИЕ ИСЧЕЗНЕТ ЧЕРЕЗ 4 СЕКУНДЫ
+                </div>
+              </div>
+            )}
+
             <button className="btn-game btn-big !text-xl" onClick={onRetry}>
               <span className="flex items-center justify-center gap-2.5">
                 <IconRefresh className="h-5 w-5" /> ЕЩЁ СМЕНА
