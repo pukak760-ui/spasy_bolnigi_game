@@ -652,13 +652,15 @@ export class Game {
 
   private updatePatients(dt: number) {
     const st = this.stats;
-    const drainScale = 1 + (this.level - 1) * 0.07;
+    // tension ramps with every shift AND with raw time survived:
+    // patients bleed faster, so upgrades and speed become essential
+    const drainScale = 1 + (this.level - 1) * 0.1 + this.time * 0.0022;
 
     // spawn logic
     this.spawnT -= dt;
     const maxWaiting = Math.min(4, 1 + Math.ceil(this.level * 0.6));
     if (this.spawnT <= 0 && this.patients.length < maxWaiting) {
-      this.spawnT = clamp(8.5 - this.level * 0.6, 3.2, 8.5);
+      this.spawnT = clamp(8.5 - this.level * 0.55 - this.time * 0.012, 2.6, 8.5);
       this.spawnPatient(false);
     }
 

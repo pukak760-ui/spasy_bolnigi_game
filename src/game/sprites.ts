@@ -46,8 +46,54 @@ export function drawAmbulance(
   ctx.fillStyle = skin.body;
   rr(ctx, -38, -19, 76, 38, 9);
   ctx.fill();
+
+  // rare paint patterns (clipped to body)
+  if (skin.pattern) {
+    ctx.save();
+    rr(ctx, -38, -19, 76, 38, 9);
+    ctx.clip();
+    if (skin.pattern === "tiger") {
+      ctx.fillStyle = "#1a1208";
+      ctx.save();
+      ctx.rotate(-0.45);
+      for (let i = -80; i < 80; i += 24) {
+        ctx.fillRect(i, -50, 9, 100);
+      }
+      ctx.restore();
+    } else if (skin.pattern === "zebra") {
+      ctx.fillStyle = "#141414";
+      for (let i = -36; i < 40; i += 15) {
+        ctx.save();
+        ctx.translate(i, 0);
+        ctx.rotate(0.12);
+        ctx.fillRect(0, -26, 7, 52);
+        ctx.restore();
+      }
+    } else {
+      // ladybug: dark head zone + black spots
+      ctx.fillStyle = "#141414";
+      ctx.fillRect(-38, -19, 12, 38);
+      const dots: [number, number][] = [
+        [-16, -10],
+        [-16, 10],
+        [2, -11],
+        [2, 11],
+        [18, -8],
+        [18, 8],
+        [-4, 0],
+      ];
+      for (const [dx, dy] of dots) {
+        ctx.beginPath();
+        ctx.arc(dx, dy, 4.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
   ctx.strokeStyle = "rgba(10,14,26,0.55)";
   ctx.lineWidth = 2;
+  rr(ctx, -38, -19, 76, 38, 9);
   ctx.stroke();
 
   // stripe
