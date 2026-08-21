@@ -13,11 +13,23 @@
     <style>
       html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #070c18; }
     </style>
+    <!-- Yandex Games SDK: loaded asynchronously, the game is notified via events.
+         Relative path /sdk.js is the variant recommended for uploading to the Yandex server. -->
+    <script>
+      function initSDK() {
+        window.__YSDK_STATE__ = "loaded";
+        window.dispatchEvent(new Event("ysdk-loaded"));
+      }
+      function failSDK() {
+        window.__YSDK_STATE__ = "failed";
+        window.dispatchEvent(new Event("ysdk-failed"));
+      }
+    </script>
+    <!-- Yandex Games SDK -->
+    <script async src="/sdk.js" onload="initSDK()" onerror="failSDK()"></script>
   </head>
   <body>
     <div id="root"></div>
-    <!-- Yandex Games SDK (provided by the platform; absent in local dev) -->
-    <script src="/sdk.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
