@@ -1,5 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { showFullscreenAdv, showRewardedVideo, initYandexSDK } from "./game/ads";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  gameplayStart,
+  gameplayStop,
+  initYandexSDK,
+  reportGameReady,
+  showFullscreenAdv,
+  showRewardedVideo,
+} from "./game/ads";
 import { SFX } from "./game/audio";
 import { Game, type GameStats, type HudSnap, type Toast } from "./game/engine";
 import {
@@ -17,6 +24,7 @@ import {
 } from "./game/meta";
 import Hud from "./ui/Hud";
 import { Garage, GameOverOverlay, HowTo, MainMenu, PauseOverlay } from "./ui/Screens";
+import TouchControls from "./ui/TouchControls";
 
 const sfx = new SFX();
 
@@ -34,6 +42,7 @@ function GameScreen({
   muted,
   best,
   isRecord,
+  isTouch,
   rewardActive,
   rewardKey,
   newAchs,
@@ -48,6 +57,7 @@ function GameScreen({
   muted: boolean;
   best: number;
   isRecord: boolean;
+  isTouch: boolean;
   rewardActive: boolean;
   rewardKey: number;
   newAchs: AchievementDef[];
@@ -114,6 +124,20 @@ function GameScreen({
     engineRef.current?.setPaused(paused);
   }, [paused]);
 
+  // Yandex platform signal: gameplay active vs paused / finished
+  const isPlaying = !paused && !over;
+  useEffect(() => {
+    if (isPlaying) gameplayStart();
+    else gameplayStop();
+  }, [isPlaying]);
+
+  const touchInput = useCallback((v: { steer: number; throttle: number; brake: number }) => {
+    engineRef.current?.setTouchInput(v);
+  }, []);
+  const touchHorn = useCallback((h: boolean) => {
+    engineRef.current?.setTouchInput({ horn: h });
+  }, []);
+
   const handleContinueAd = useCallback(() => {
     if (adBusy) return Promise.resolve(false);
     setAdBusy(true);
@@ -139,7 +163,10 @@ function GameScreen({
     <div className="relative h-full w-full bg-[#0a0f1e]">
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
 
-      <Hud hud={hud} muted={muted} onPause={togglePause} onMute={onToggleMute} />
+      <Hud hud={hud} muted={muted} showKeys={!isTouch} onPause={togglePause} onMute={onToggleMute} />
+
+      {/* touch controls on mobile — only while actually driving */}
+      {isTouch && !paused && !over && <TouchControls onInput={touchInput} onHorn={touchHorn} />}
 
       {/* toasts */}
       <div className="pointer-events-none absolute left-1/2 top-[104px] z-20 flex -translate-x-1/2 flex-col items-center gap-2">
@@ -202,15 +229,53 @@ export default function App() {
   const statsRef = useRef<GameStats | null>(null);
   const finalizedRef = useRef(false);
   const rewardTimerRef = useRef<number | null>(null);
+  // true while an ad is on screen — blocks the mute-sync effect from un-muting mid-ad
+  const adActiveRef = useRef(false);
+
+  // mobile / touch detection (moderation: show touch controls, hide key hints)
+  const isTouch = useMemo(
+    () =>
+      typeof window !== "undefined" &&
+      ("ontouchstart" in window || (navigator.maxTouchPoints ?? 0) > 0),
+    []
+  );
 
   useEffect(() => {
     saveMeta(meta);
-    sfx.muted = meta.muted;
+    // don't let a state update un-mute the game while an ad is on screen
+    if (!adActiveRef.current) sfx.muted = meta.muted;
   }, [meta]);
 
   // Yandex Games SDK init (no-op outside the platform)
   useEffect(() => {
     void initYandexSDK();
+  }, []);
+
+  // Tell the platform the game is ready once fonts are loaded and the menu is visible.
+  useEffect(() => {
+    let done = false;
+    const fire = () => {
+      if (!done) {
+        done = true;
+        reportGameReady();
+      }
+    };
+    const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
+    if (fonts?.ready) fonts.ready.then(fire).catch(fire);
+    else window.setTimeout(fire, 900);
+    const t = window.setTimeout(fire, 2600); // hard fallback
+    return () => window.clearTimeout(t);
+  }, []);
+
+  /** Full silence while an ad is on screen; restored to the user's setting on ad close. */
+  const muteForAd = useCallback(() => {
+    adActiveRef.current = true;
+    sfx.stopAll();
+    sfx.muted = true;
+  }, []);
+  const unmuteAfterAd = useCallback(() => {
+    adActiveRef.current = false;
+    sfx.muted = metaRef.current.muted;
   }, []);
 
   const clearRewardTimer = useCallback(() => {
@@ -240,13 +305,17 @@ export default function App() {
     if (fresh.length) sfx.levelup();
     setMeta(m);
 
-    // strict Yandex rule: fullscreen interstitial after every 3rd completed shift
+    // strict Yandex rule: fullscreen interstitial after every 3rd completed shift.
+    // Sound is fully muted while the ad is open and restored in onClose.
     if (m.shiftsTotal % 3 === 0) {
-      showFullscreenAdv(() => undefined);
+      muteForAd();
+      showFullscreenAdv({ onOpen: () => {}, onClose: () => unmuteAfterAd() });
     }
-  }, []);
+  }, [muteForAd, unmuteAfterAd]);
 
   const startGame = useCallback(() => {
+    // if the previous shift ended but its 4s reward window never elapsed, count it now
+    finalizeShift();
     sfx.unlock();
     sfx.click();
     setIsRecord(false);
@@ -257,7 +326,7 @@ export default function App() {
     finalizedRef.current = false;
     setRunId((r) => r + 1);
     setScreen("game");
-  }, [clearRewardTimer]);
+  }, [clearRewardTimer, finalizeShift]);
 
   // Enter to start from menu
   useEffect(() => {
@@ -294,19 +363,28 @@ export default function App() {
 
   /** Rewarded video → refill fuel and keep the same run going. */
   const handleContinueAd = useCallback((): Promise<boolean> => {
+    // hide the 4s window and cancel the finalize timer the moment the ad opens,
+    // so the shift can't be finalized or double-counted while the video plays
+    clearRewardTimer();
+    setRewardOn(false);
+    muteForAd();
     return new Promise((resolve) => {
+      let granted = false;
       showRewardedVideo({
+        onOpen: () => {},
+        // the reward (full tank) is granted ONLY when the platform confirms it
         onRewarded: () => {
-          // player committed to continue: the shift is NOT finalized
-          clearRewardTimer();
-          setRewardOn(false);
-          sfx.cash();
-          resolve(true);
+          granted = true;
         },
-        onFail: () => resolve(false),
+        // always fires when the ad closes — restore sound & resume without overlay stacking
+        onClose: () => {
+          unmuteAfterAd();
+          if (granted) sfx.cash();
+          resolve(granted);
+        },
       });
     });
-  }, [clearRewardTimer]);
+  }, [clearRewardTimer, muteForAd, unmuteAfterAd]);
 
   const leaveRun = useCallback(
     (next: ScreenId) => {
@@ -392,6 +470,7 @@ export default function App() {
       muted={meta.muted}
       best={meta.best}
       isRecord={isRecord}
+      isTouch={isTouch}
       rewardActive={rewardOn}
       rewardKey={rewardKey}
       newAchs={newAchs}

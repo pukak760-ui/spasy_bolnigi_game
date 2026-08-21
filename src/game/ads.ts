@@ -1,9 +1,8 @@
-// ---- Yandex Games SDK ad wrappers (fullscreen between shifts + rewarded video) ----
-// Docs: https://yandex.ru/dev/games/ — /sdk.js is included in index.html as
-// <script async src="/sdk.js" onload="initSDK()" onerror="failSDK()"> (in <head>).
-// initSDK() / failSDK() dispatch "ysdk-loaded" / "ysdk-failed" events that this
-// module waits for, so YaGames.init() is always called only after the script
-// has loaded — exactly the order required by the platform.
+// ---- Yandex Games SDK wrappers: init, fullscreen ads, rewarded video, gameplay/loading signals ----
+// Docs: https://yandex.ru/dev/games/
+// /sdk.js is included in index.html as <script async src="/sdk.js" onload="initSDK()" onerror="failSDK()">.
+// initSDK()/failSDK() set window.__YSDK_STATE__ and dispatch "ysdk-loaded"/"ysdk-failed",
+// which this module waits for so YaGames.init() is never called before the script loads.
 
 interface YAdvCallbacks {
   onOpen?: () => void;
@@ -19,6 +18,7 @@ interface YSDK {
   };
   features?: {
     LoadingAPI?: { ready?: () => void };
+    GameplayAPI?: { start?: () => void; stop?: () => void };
   };
 }
 
@@ -31,13 +31,12 @@ declare global {
 }
 
 let readyPromise: Promise<boolean> | null = null;
+let reportedReady = false;
 
 /**
- * Initializes the Yandex Games SDK.
- * Safe to call at any moment: if the sdk.js script is still loading,
- * the init waits for the onload/onerror events (with a hard timeout),
- * so `YaGames` can never be "not defined" here.
- * Resolves `true` when the platform SDK is ready, `false` outside Yandex Games.
+ * Initializes the SDK. Safe to call anytime: if /sdk.js is still loading it waits
+ * for the onload/onerror events (with a hard timeout), so `YaGames` is always defined
+ * here. Resolves `true` when the platform SDK is ready, `false` outside Yandex Games.
  */
 export function initYandexSDK(): Promise<boolean> {
   if (!readyPromise) {
@@ -56,18 +55,12 @@ export function initYandexSDK(): Promise<boolean> {
       const tryInit = () => {
         const YG = window.YaGames;
         if (!YG) {
-          done(false); // script loaded but YaGames is absent — treat as no SDK
+          done(false);
           return;
         }
         YG.init()
           .then((sdk) => {
             window.ysdk = sdk;
-            // tell the platform the game is ready (optional, recommended)
-            try {
-              sdk.features?.LoadingAPI?.ready?.();
-            } catch {
-              /* older SDK builds may lack LoadingAPI */
-            }
             console.info("[ads] Yandex Games SDK initialized");
             done(true);
           })
@@ -83,15 +76,12 @@ export function initYandexSDK(): Promise<boolean> {
         done(false);
       };
 
-      // script already finished before this module ran?
       if (window.__YSDK_STATE__ === "loaded") return tryInit();
       if (window.__YSDK_STATE__ === "failed") return onFailed();
       if (window.YaGames) return tryInit();
 
-      // otherwise wait for the script events
       window.addEventListener("ysdk-loaded", onLoaded);
       window.addEventListener("ysdk-failed", onFailed);
-      // hard timeout: local dev without /sdk.js must not hang
       const giveUp = window.setTimeout(() => {
         console.info("[ads] SDK not detected in time — running outside Yandex Games");
         done(false);
@@ -104,71 +94,116 @@ export function initYandexSDK(): Promise<boolean> {
 const sdk = () => window.ysdk;
 
 /**
- * Fullscreen interstitial (shown strictly after every 3rd finished shift).
- * `done` is guaranteed to be called exactly once.
+ * Signal the platform that the game has finished loading and the main menu is shown.
+ * Must be called once, exactly when the player sees the menu (moderation requirement).
  */
-export function showFullscreenAdv(done: () => void) {
+export function reportGameReady() {
+  if (reportedReady) return;
+  reportedReady = true;
   void initYandexSDK().then(() => {
-    const s = sdk();
-    if (!s?.adv) {
-      console.info("[ads] fullscreen skipped (no SDK)");
-      window.setTimeout(done, 250);
-      return;
-    }
-    let finished = false;
-    const finish = () => {
-      if (!finished) {
-        finished = true;
-        done();
-      }
-    };
     try {
-      s.adv.showFullscreenAdv({
-        onOpen: () => {},
-        onClose: () => finish(),
-        onError: () => finish(),
-      });
-      // safety net in case the platform never fires callbacks
-      window.setTimeout(finish, 60000);
+      sdk()?.features?.LoadingAPI?.ready?.();
     } catch {
-      finish();
+      /* older SDK builds may lack LoadingAPI */
+    }
+  });
+}
+
+/** Gameplay is active (a run is in progress and not paused). */
+export function gameplayStart() {
+  void initYandexSDK().then(() => {
+    try {
+      sdk()?.features?.GameplayAPI?.start?.();
+    } catch {
+      /* ignore */
+    }
+  });
+}
+
+/** Gameplay paused / finished / left (moderation requires this on pause, game-over, menu). */
+export function gameplayStop() {
+  void initYandexSDK().then(() => {
+    try {
+      sdk()?.features?.GameplayAPI?.stop?.();
+    } catch {
+      /* ignore */
     }
   });
 }
 
 /**
- * Rewarded video ("continue for an ad" button).
- * Exactly one of onRewarded / onFail is called.
+ * Fullscreen interstitial (shown strictly after every 3rd finished shift).
+ * `onClose` is guaranteed to fire exactly once — restore sound there.
  */
-export function showRewardedVideo(cb: { onRewarded: () => void; onFail: () => void }) {
+export function showFullscreenAdv(opts: { onOpen?: () => void; onClose: () => void }) {
+  void initYandexSDK().then(() => {
+    const s = sdk();
+    if (!s?.adv) {
+      console.info("[ads] fullscreen skipped (no SDK)");
+      window.setTimeout(() => {
+        opts.onOpen?.();
+        opts.onClose();
+      }, 250);
+      return;
+    }
+    let closed = false;
+    const close = () => {
+      if (!closed) {
+        closed = true;
+        opts.onClose();
+      }
+    };
+    try {
+      s.adv.showFullscreenAdv({
+        onOpen: () => opts.onOpen?.(),
+        onClose: () => close(),
+        onError: () => close(),
+      });
+      window.setTimeout(close, 60000); // safety net
+    } catch {
+      close();
+    }
+  });
+}
+
+/**
+ * Rewarded video ("continue for an ad").
+ * `onRewarded` fires only if the reward was granted; `onClose` ALWAYS fires once when
+ * the ad window closes — resolve the promise and restore sound there.
+ */
+export function showRewardedVideo(opts: {
+  onOpen?: () => void;
+  onRewarded: () => void;
+  onClose: () => void;
+}) {
   void initYandexSDK().then(() => {
     const s = sdk();
     if (!s?.adv) {
       console.info("[ads] rewarded simulated (no SDK)");
-      window.setTimeout(cb.onRewarded, 500);
+      window.setTimeout(() => {
+        opts.onOpen?.();
+        opts.onRewarded();
+        opts.onClose();
+      }, 500);
       return;
     }
-    let rewarded = false;
-    let settled = false;
-    const fail = () => {
-      if (!rewarded && !settled) {
-        settled = true;
-        cb.onFail();
+    let closed = false;
+    const close = () => {
+      if (!closed) {
+        closed = true;
+        opts.onClose();
       }
     };
     try {
       s.adv.showRewardedVideo({
-        onOpen: () => {},
-        onRewarded: () => {
-          rewarded = true;
-          cb.onRewarded();
-        },
-        onClose: () => fail(),
-        onError: () => fail(),
+        onOpen: () => opts.onOpen?.(),
+        onRewarded: () => opts.onRewarded(),
+        onClose: () => close(),
+        onError: () => close(),
       });
-      window.setTimeout(fail, 90000);
+      window.setTimeout(close, 90000); // safety net
     } catch {
-      fail();
+      close();
     }
   });
 }

@@ -226,6 +226,11 @@ export class Game {
   private dpr = 1;
 
   private keys = new Set<string>();
+  // touch (mobile) input — merged with the keyboard
+  private tSteer = 0;
+  private tThrottle = 0;
+  private tBrake = 0;
+  private tHorn = false;
   private raf = 0;
   private last = 0;
   private destroyed = false;
@@ -243,6 +248,14 @@ export class Game {
   };
   private onBlur = () => {
     if (this.state === "run" && !this.paused) this.cb.onPauseRequest();
+  };
+  // tab hidden / window minimized → kill sound immediately and auto-pause
+  private onVis = () => {
+    if (document.hidden) {
+      this.sfx.siren(false);
+      this.sfx.engine(0);
+      if (this.state === "run" && !this.paused) this.cb.onPauseRequest();
+    }
   };
   private onResize = () => this.resize();
 
@@ -269,6 +282,7 @@ export class Game {
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
     window.addEventListener("blur", this.onBlur);
+    window.addEventListener("visibilitychange", this.onVis);
     window.addEventListener("resize", this.onResize);
     this.resize();
   }
@@ -299,6 +313,14 @@ export class Game {
     }
   }
 
+  /** Feed virtual-joystick / horn state from the touch controls. */
+  setTouchInput(t: { steer?: number; throttle?: number; brake?: number; horn?: boolean }) {
+    if (t.steer !== undefined) this.tSteer = clamp(t.steer, -1, 1);
+    if (t.throttle !== undefined) this.tThrottle = clamp(t.throttle, 0, 1);
+    if (t.brake !== undefined) this.tBrake = clamp(t.brake, 0, 1);
+    if (t.horn !== undefined) this.tHorn = t.horn;
+  }
+
   /** Rewarded-ad continue: revive the same run with one life and a full tank. */
   continueRun() {
     if (this.state !== "over") return;
@@ -320,6 +342,7 @@ export class Game {
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
     window.removeEventListener("blur", this.onBlur);
+    window.removeEventListener("visibilitychange", this.onVis);
     window.removeEventListener("resize", this.onResize);
     this.sfx.siren(false);
     this.sfx.engine(0);
@@ -340,12 +363,14 @@ export class Game {
     this.dayT = (this.dayT + dt / 95) % 1;
     const st = this.stats;
 
-    // ----- input -----
-    const up = this.keys.has("arrowup") || this.keys.has("w") || this.keys.has("ц");
-    const down = this.keys.has("arrowdown") || this.keys.has("s") || this.keys.has("ы");
+    // ----- input (keyboard + touch merged) -----
+    const up =
+      this.keys.has("arrowup") || this.keys.has("w") || this.keys.has("ц") || this.tThrottle > 0.25;
+    const down =
+      this.keys.has("arrowdown") || this.keys.has("s") || this.keys.has("ы") || this.tBrake > 0.25;
     const left = this.keys.has("arrowleft") || this.keys.has("a") || this.keys.has("ф");
     const right = this.keys.has("arrowright") || this.keys.has("d") || this.keys.has("в");
-    const hornKey = this.keys.has(" ");
+    const hornKey = this.keys.has(" ") || this.tHorn;
 
     const offroad = !isOnRoad(this.px, this.py);
     const maxSp = st.maxSpeed * (offroad ? 0.45 : 1) * (this.fuel <= 0 ? 0.3 : 1);
@@ -356,8 +381,8 @@ export class Game {
     if (down && this.speed < -90) this.speed = -90;
     this.speed = clamp(this.speed, -110, maxSp);
 
-    const steer = (right ? 1 : 0) - (left ? 1 : 0);
-    if (steer !== 0 && Math.abs(this.speed) > 8) {
+    const steer = clamp((right ? 1 : 0) - (left ? 1 : 0) + this.tSteer, -1, 1);
+    if (Math.abs(steer) > 0.05 && Math.abs(this.speed) > 8) {
       this.pa += steer * st.turn * dt * clamp(Math.abs(this.speed) / 150, 0.25, 1) * Math.sign(this.speed);
     }
 
@@ -1266,7 +1291,9 @@ export class Game {
 
     // ambulance
     const phase = (this.time * 1.6) % 1;
-    const braking = (this.keys.has("arrowdown") || this.keys.has("s") || this.keys.has("ы")) && this.speed > 12;
+    const braking =
+      (this.keys.has("arrowdown") || this.keys.has("s") || this.keys.has("ы") || this.tBrake > 0.25) &&
+      this.speed > 12;
     drawAmbulance(ctx, this.px, this.py, this.pa, this.skin, phase, !!this.carrying, braking, night);
 
     // carried patient indicator above ambulance

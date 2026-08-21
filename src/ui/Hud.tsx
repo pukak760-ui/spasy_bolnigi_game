@@ -15,11 +15,12 @@ import {
 interface Props {
   hud: HudSnap | null;
   muted: boolean;
+  showKeys: boolean;
   onPause: () => void;
   onMute: () => void;
 }
 
-export default function Hud({ hud, muted, onPause, onMute }: Props) {
+export default function Hud({ hud, muted, showKeys, onPause, onMute }: Props) {
   if (!hud) return null;
   const hp01 = hud.carrying ? hud.carrying.hp / 100 : 0;
   const hpColor = hp01 > 0.5 ? "#3ddc6b" : hp01 > 0.25 ? "#ffcf3f" : "#ff2038";
@@ -150,7 +151,8 @@ export default function Hud({ hud, muted, onPause, onMute }: Props) {
         </div>
       </div>
 
-      {/* ---- bottom center: controls hint ---- */}
+      {/* ---- bottom center: keyboard controls hint (hidden on touch devices) ---- */}
+      {showKeys && (
       <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-3 opacity-80">
         <span className="flex items-center gap-1">
           <span className="keycap !h-7 !min-w-7 !text-[10px]">W</span>
@@ -167,12 +169,15 @@ export default function Hud({ hud, muted, onPause, onMute }: Props) {
           <span className="keycap !h-7 !px-2 !text-[10px]">ESC</span>
           <span className="ml-1 text-[11px] font-semibold text-[#8fa0c8]">пауза</span>
         </span>
-        {hud.night > 0.4 && (
-          <span className="flex items-center gap-1 text-[11px] font-bold text-[#7fb2ff]">
-            <IconStar className="h-3.5 w-3.5" /> НОЧЬ — следи за фарами
-          </span>
-        )}
       </div>
+      )}
+
+      {/* night indicator — always visible */}
+      {hud.night > 0.4 && (
+        <div className={`absolute flex items-center gap-1 text-[11px] font-bold text-[#7fb2ff] ${showKeys ? "bottom-3 left-1/2 translate-x-[150px]" : "bottom-40 left-1/2 -translate-x-1/2"}`}>
+          <IconStar className="h-3.5 w-3.5" /> НОЧЬ — следи за фарами
+        </div>
+      )}
     </div>
   );
 }
