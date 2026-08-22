@@ -1,6 +1,7 @@
 // ---- menu, how-to, garage, pause & game-over screens ----
 import { useEffect, useState, type ReactNode } from "react";
 import type { GameStats, HudSnap } from "../game/engine";
+import { fetchLeaderboard, type LBRow } from "../game/leaderboard";
 import {
   ACHIEVEMENTS,
   ACH_BY_ID,
@@ -34,6 +35,8 @@ import {
   IconSoundOn,
   IconStar,
   IconTank,
+  IconTrophy,
+  IconUser,
 } from "./icons";
 
 const UPG_ICONS: Record<string, (p: { className?: string }) => ReactNode> = {
@@ -43,15 +46,6 @@ const UPG_ICONS: Record<string, (p: { className?: string }) => ReactNode> = {
   tank: IconTank,
   siren: IconSiren,
 };
-
-const TICKER = [
-  { name: "Мария, 62", addr: "ул. Гагарина, 12", diag: "Температура 41°" },
-  { name: "Глеб, 8", addr: "пр. Мира, 84", diag: "Сильная аллергия" },
-  { name: "Виктор, 45", addr: "ул. Лесная, 3", diag: "Подозрение на инфаркт" },
-  { name: "Зоя, 27", addr: "б-р Солнечный, 17", diag: "Перелом ноги" },
-  { name: "Борис, 71", addr: "пер. Тихий, 5", diag: "Ожог паром" },
-  { name: "Анна, 34", addr: "ул. Речная, 28", diag: "Отравление" },
-];
 
 function fmtTime(sec: number) {
   const m = Math.floor(sec / 60);
@@ -73,6 +67,129 @@ function fmtTarget(a: AchievementDef) {
   return String(a.target);
 }
 
+// ================= LEADERBOARD (Yandex Games «top_scores») =================
+function LbAvatar({ src }: { src: string | null }) {
+  const [broken, setBroken] = useState(false);
+  if (src && !broken) {
+    return (
+      <img
+        src={src}
+        alt=""
+        onError={() => setBroken(true)}
+        className="h-7 w-7 shrink-0 rounded-full border border-[#3d558f] object-cover"
+      />
+    );
+  }
+  return (
+    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#3d558f] bg-[#1b2a4d] text-[#8fa0c8]">
+      <IconUser className="h-3.5 w-3.5" />
+    </span>
+  );
+}
+
+function RankBadge({ rank }: { rank: number }) {
+  const medal = rank === 1 ? "#ffcf3f" : rank === 2 ? "#c9d6e8" : rank === 3 ? "#d08a4f" : null;
+  if (medal) {
+    return (
+      <span
+        className="flex h-6 w-6 shrink-0 items-center justify-center"
+        style={{ background: medal, clipPath: "polygon(4px 0,100% 0,100% calc(100% - 4px),calc(100% - 4px) 100%,0 100%,0 4px)" }}
+      >
+        <IconTrophy className="h-3.5 w-3.5 text-[#231a00]" />
+      </span>
+    );
+  }
+  return <span className="flex h-6 w-6 shrink-0 items-center justify-center font-disp text-[12px] text-[#8fa0c8]">{rank}</span>;
+}
+
+function LeaderboardCard({ best }: { best: number }) {
+  const [rows, setRows] = useState<LBRow[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [stamp, setStamp] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    void fetchLeaderboard().then((r) => {
+      if (!alive) return;
+      setRows(r);
+      setLoading(false);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [stamp]);
+
+  return (
+    <div className="panel-cut overflow-hidden">
+      <div className="flex items-center justify-between bg-[#c81e33] px-4 py-2">
+        <span className="flex items-center gap-2 font-disp text-xs tracking-widest text-white">
+          <IconTrophy className="h-4 w-4 text-[#ffcf3f]" /> ТОП ИГРОКОВ
+        </span>
+        <button
+          onClick={() => setStamp((s) => s + 1)}
+          title="Обновить"
+          className={`flex h-7 w-7 items-center justify-center bg-[rgba(0,0,0,0.22)] text-white transition hover:bg-[rgba(0,0,0,0.45)] ${loading ? "spin-slow" : ""}`}
+          style={{ clipPath: "polygon(5px 0,100% 0,100% calc(100% - 5px),calc(100% - 5px) 100%,0 100%,0 5px)" }}
+        >
+          <IconRefresh className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <div className="flex min-h-[248px] flex-col gap-1 p-3">
+        {loading &&
+          Array.from({ length: 6 }, (_, i) => (
+            <div key={i} className="flex items-center gap-2.5 px-2.5 py-2" style={{ opacity: 1 - i * 0.13 }}>
+              <div className="shimmer h-5 w-5" />
+              <div className="shimmer h-7 w-7 rounded-full" />
+              <div className="shimmer h-3.5 flex-1" />
+              <div className="shimmer h-3.5 w-10" />
+            </div>
+          ))}
+
+        {!loading && rows === null && (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 py-4 text-center">
+            <IconTrophy className="h-9 w-9 text-[#3d558f]" />
+            <div className="text-[13px] font-semibold text-[#c3d0ee]">Рейтинг доступен в Яндекс Играх</div>
+            <div className="max-w-[230px] text-[11px] leading-relaxed text-[#8fa0c8]">
+              Сыграй смену — твой счёт попадёт в общий топ платформы
+            </div>
+          </div>
+        )}
+
+        {!loading && rows !== null && rows.length === 0 && (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 py-4 text-center">
+            <IconTrophy className="h-9 w-9 text-[#3d558f]" />
+            <div className="text-[13px] font-semibold text-[#c3d0ee]">Пока нет результатов</div>
+            <div className="max-w-[230px] text-[11px] leading-relaxed text-[#8fa0c8]">Стань первым в топе — спаси больного!</div>
+          </div>
+        )}
+
+        {!loading &&
+          rows !== null &&
+          rows.map((r) => (
+            <div
+              key={r.rank}
+              className={`flex items-center gap-2.5 rounded px-2.5 py-1.5 ${
+                r.rank <= 3 ? "bg-[rgba(255,207,63,0.09)]" : "bg-[rgba(46,107,255,0.05)]"
+              }`}
+            >
+              <RankBadge rank={r.rank} />
+              <LbAvatar src={r.avatar} />
+              <span className="min-w-0 flex-1 truncate text-[12px] font-bold text-white">{r.name}</span>
+              <span className="font-disp shrink-0 text-[13px] text-[#ffe27a]">{r.score.toLocaleString("ru-RU")}</span>
+            </div>
+          ))}
+      </div>
+
+      <div className="flex items-center justify-between border-t border-[#27407a] px-4 py-2.5">
+        <span className="text-[10px] font-bold tracking-widest text-[#8fa0c8]">ВАШ РЕКОРД</span>
+        <span className="font-disp text-base text-[#ffe27a]">{best.toLocaleString("ru-RU")}</span>
+      </div>
+    </div>
+  );
+}
+
 // ================= MAIN MENU =================
 export function MainMenu({
   meta,
@@ -87,13 +204,6 @@ export function MainMenu({
   onHowTo: () => void;
   onToggleMute: () => void;
 }) {
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    const id = window.setInterval(() => setTick((t) => t + 1), 2200);
-    return () => window.clearInterval(id);
-  }, []);
-  const calls = [0, 1, 2].map((i) => TICKER[(tick + i) % TICKER.length]);
-
   return (
     <div className="relative h-full w-full overflow-hidden">
       <MenuScene skinId={meta.skin} />
@@ -195,31 +305,7 @@ export function MainMenu({
             </div>
           </div>
 
-          <div className="panel-cut overflow-hidden">
-            <div className="flex items-center gap-2 bg-[#c81e33] px-4 py-2">
-              <span className="beacon-red inline-block h-2.5 w-2.5 rounded-full bg-white" />
-              <span className="font-disp text-xs tracking-widest text-white">СВОДКА ВЫЗОВОВ</span>
-            </div>
-            <div className="flex flex-col gap-1 p-3">
-              {calls.map((c, i) => (
-                <div
-                  key={`${tick}-${i}`}
-                  className={`pop-in flex items-center justify-between rounded px-2.5 py-2 ${
-                    i === 0 ? "bg-[rgba(255,59,78,0.14)]" : "bg-[rgba(46,107,255,0.07)]"
-                  }`}
-                  style={{ animationDelay: `${i * 0.07}s` }}
-                >
-                  <div>
-                    <div className="text-[12px] font-bold text-white">{c.name}</div>
-                    <div className="text-[10px] text-[#8fa0c8]">{c.addr}</div>
-                  </div>
-                  <div className={`text-right text-[10px] font-bold ${i === 0 ? "text-[#ff8b98]" : "text-[#7fb2ff]"}`}>
-                    {c.diag}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <LeaderboardCard best={meta.best} />
         </div>
       </div>
     </div>

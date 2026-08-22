@@ -138,3 +138,15 @@ export const IconLock = ({ className }: P) => (
     <path d="M12 2a5 5 0 0 1 5 5v3h1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h1V7a5 5 0 0 1 5-5zm0 2a3 3 0 0 0-3 3v3h6V7a3 3 0 0 0-3-3zm0 9a1.8 1.8 0 0 0-.9 3.4V18a.9.9 0 0 0 1.8 0v-1.6A1.8 1.8 0 0 0 12 13z" />
   </svg>
 );
+
+export const IconTrophy = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={className} fill="currentColor">
+    <path d="M6 2h12v2h3v3a5 5 0 0 1-4.6 4.98A6 6 0 0 1 13 15.9V18h3v2H8v-2h3v-2.1a6 6 0 0 1-3.4-3.92A5 5 0 0 1 3 7V4h3V2zm-1 4v1a3 3 0 0 0 2 2.83V6H5zm14 0h-2v3.83A3 3 0 0 0 19 7V6z" />
+  </svg>
+);
+
+export const IconUser = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={className} fill="currentColor">
+    <path d="M12 3a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9zm0 11c4.4 0 8 2.2 8 5v2H4v-2c0-2.8 3.6-5 8-5z" />
+  </svg>
+);

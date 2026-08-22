@@ -55,6 +55,8 @@ export interface Callbacks {
   onGameOver: (s: GameStats) => void;
   onToast: (t: Toast) => void;
   onPauseRequest: () => void;
+  /** Fired once, right after the very first frame has been rendered. */
+  onLoaded?: () => void;
 }
 
 export interface GameOptions {
@@ -234,6 +236,7 @@ export class Game {
   private raf = 0;
   private last = 0;
   private destroyed = false;
+  private loadedOnce = false;
 
   private onKeyDown = (e: KeyboardEvent) => {
     const k = e.key.toLowerCase();
@@ -296,6 +299,10 @@ export class Game {
       if (!this.paused && this.state === "run") {
         this.update(dt);
         this.render();
+        if (!this.loadedOnce) {
+          this.loadedOnce = true;
+          this.cb.onLoaded?.();
+        }
       }
       this.raf = requestAnimationFrame(loop);
     };

@@ -9,6 +9,7 @@ import {
 } from "./game/ads";
 import { SFX } from "./game/audio";
 import { Game, type GameStats, type HudSnap, type Toast } from "./game/engine";
+import { submitScore } from "./game/leaderboard";
 import {
   ACH_BY_ID,
   checkAchievements,
@@ -23,6 +24,7 @@ import {
   type Upgrades,
 } from "./game/meta";
 import Hud from "./ui/Hud";
+import { LoadingScreen } from "./ui/LoadingScreen";
 import { Garage, GameOverOverlay, HowTo, MainMenu, PauseOverlay } from "./ui/Screens";
 import TouchControls from "./ui/TouchControls";
 
@@ -43,11 +45,13 @@ function GameScreen({
   best,
   isRecord,
   isTouch,
+  ready,
   rewardActive,
   rewardKey,
   newAchs,
   onGameOver,
   onContinueAd,
+  onLoaded,
   onRestart,
   onQuit,
   onGarage,
@@ -58,11 +62,13 @@ function GameScreen({
   best: number;
   isRecord: boolean;
   isTouch: boolean;
+  ready: boolean;
   rewardActive: boolean;
   rewardKey: number;
   newAchs: AchievementDef[];
   onGameOver: (s: GameStats) => void;
   onContinueAd: () => Promise<boolean>;
+  onLoaded: () => void;
   onRestart: () => void;
   onQuit: () => void;
   onGarage: () => void;
@@ -109,6 +115,7 @@ function GameScreen({
         },
         onToast: addToast,
         onPauseRequest: togglePause,
+        onLoaded,
       },
     });
     engineRef.current = game;
@@ -125,7 +132,7 @@ function GameScreen({
   }, [paused]);
 
   // Yandex platform signal: gameplay active vs paused / finished
-  const isPlaying = !paused && !over;
+  const isPlaying = ready && !paused && !over;
   useEffect(() => {
     if (isPlaying) gameplayStart();
     else gameplayStop();
@@ -223,6 +230,8 @@ export default function App() {
   const [rewardOn, setRewardOn] = useState(false);
   const [rewardKey, setRewardKey] = useState(0);
   const [newAchs, setNewAchs] = useState<AchievementDef[]>([]);
+  // becomes true once the engine has rendered its first frame → hides the loader
+  const [gameReady, setGameReady] = useState(false);
 
   const metaRef = useRef(meta);
   metaRef.current = meta;
@@ -313,6 +322,15 @@ export default function App() {
     }
   }, [muteForAd, unmuteAfterAd]);
 
+  const handleLoaded = useCallback(() => setGameReady(true), []);
+
+  // safety net: never leave the player stuck on the loader
+  useEffect(() => {
+    if (screen !== "game") return;
+    const t = window.setTimeout(() => setGameReady(true), 3500);
+    return () => window.clearTimeout(t);
+  }, [screen, runId]);
+
   const startGame = useCallback(() => {
     // if the previous shift ended but its 4s reward window never elapsed, count it now
     finalizeShift();
@@ -321,6 +339,7 @@ export default function App() {
     setIsRecord(false);
     setNewAchs([]);
     setRewardOn(false);
+    setGameReady(false);
     clearRewardTimer();
     statsRef.current = null;
     finalizedRef.current = false;
@@ -342,6 +361,8 @@ export default function App() {
       statsRef.current = s;
       finalizedRef.current = false;
       setIsRecord(s.score > 0 && s.score > metaRef.current.best);
+      // send the final run score to the Yandex leaderboard (safe for guests/offline)
+      void submitScore(s.score);
       // bank the run earnings & records immediately (they persist either way)
       setMeta((m) => ({
         ...m,
@@ -464,6 +485,7 @@ export default function App() {
   }
 
   return (
+    <>
     <GameScreen
       key={runId}
       meta={meta}
@@ -471,15 +493,19 @@ export default function App() {
       best={meta.best}
       isRecord={isRecord}
       isTouch={isTouch}
+      ready={gameReady}
       rewardActive={rewardOn}
       rewardKey={rewardKey}
       newAchs={newAchs}
       onGameOver={handleGameOver}
       onContinueAd={handleContinueAd}
+      onLoaded={handleLoaded}
       onRestart={startGame}
       onQuit={() => leaveRun("menu")}
       onGarage={() => leaveRun("garage")}
       onToggleMute={toggleMute}
     />
+    {screen === "game" && <LoadingScreen hidden={gameReady} />}
+    </>
   );
 }

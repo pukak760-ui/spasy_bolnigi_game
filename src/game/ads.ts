@@ -11,6 +11,27 @@ interface YAdvCallbacks {
   onRewarded?: () => void;
 }
 
+export interface YLBPlayer {
+  uniqueID?: string;
+  publicName?: string;
+  getAvatarSrc?: (size: "small" | "medium" | "large") => string;
+}
+
+export interface YLBEntry {
+  rank: number;
+  score: number;
+  formattedScore?: string;
+  player: YLBPlayer | null;
+}
+
+interface YLeaderboards {
+  getEntries: (
+    name: string,
+    opts?: { quantityTop?: number; includeUser?: boolean; quantityAround?: number }
+  ) => Promise<{ entries: YLBEntry[] }>;
+  setScore: (name: string, score: number) => Promise<unknown>;
+}
+
 interface YSDK {
   adv: {
     showFullscreenAdv: (cb?: YAdvCallbacks) => void;
@@ -20,6 +41,8 @@ interface YSDK {
     LoadingAPI?: { ready?: () => void };
     GameplayAPI?: { start?: () => void; stop?: () => void };
   };
+  leaderboards?: YLeaderboards;
+  isAvailableMethod?: (method: string) => Promise<boolean>;
 }
 
 declare global {
