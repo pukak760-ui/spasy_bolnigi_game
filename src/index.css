@@ -11,8 +11,8 @@
   --c-blue: #2e6bff;
   --c-text: #eef3ff;
   --c-dim: #8fa0c8;
-  --font-disp: "Russo One", "Rubik", sans-serif;
-  --font-body: "Rubik", sans-serif;
+  --font-disp: "Russo One", "Arial Black", Impact, "Rubik", sans-serif;
+  --font-body: "Rubik", "Segoe UI", Tahoma, Verdana, sans-serif;
 }
 
 * { box-sizing: border-box; }

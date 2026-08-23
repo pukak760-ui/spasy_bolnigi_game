@@ -43,10 +43,16 @@ export async function detectAppLanguage(): Promise<SupportedLang> {
   // which always happens long before the first shift can start
   await initYandexSDK();
 
-  const sdk = window.ysdk;
-  platformRaw = sdk?.environment?.i18n?.lang ?? null;
+  // Two sources for the platform language (docs 2.14: environment.i18n.lang):
+  // 1) the value captured by the canonical inline handler in index.html
+  //    (`const lang = ysdk.environment.i18n.lang;` inside initSDK/onload);
+  // 2) a direct read from the initialized SDK instance.
+  const inlineLang = (window as Window & { __YSDK_LANG__?: string | null }).__YSDK_LANG__ ?? null;
+  const sdkLang = window.ysdk?.environment?.i18n?.lang ?? null;
+  platformRaw = inlineLang ?? sdkLang;
 
-  const candidates: Array<string | null | undefined> = [platformRaw];
+  // Supported set first, then browser locale, then the documented fallback set.
+  const candidates: Array<string | null | undefined> = [inlineLang, sdkLang];
   if (typeof navigator !== "undefined") {
     candidates.push(navigator.language, ...(navigator.languages ?? []));
   }
