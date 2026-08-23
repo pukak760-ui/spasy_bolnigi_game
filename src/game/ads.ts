@@ -49,6 +49,10 @@ interface YSDK {
     i18n?: { lang?: string; tld?: string };
     payload?: string;
   };
+  // SDK event emitter (docs: sdk-events) — current builds deliver
+  // game_api_pause / game_api_resume through ysdk.on(), not window events
+  on?: (event: string, cb: () => void) => unknown;
+  off?: (event: string, cb: () => void) => unknown;
 }
 
 declare global {
@@ -265,4 +269,42 @@ export function showRewardedVideo(opts: {
       close();
     }
   });
+}
+
+/**
+ * Platform pause/resume events (docs: sdk-events).
+ * Current SDK builds deliver them via `ysdk.on('game_api_pause')`; older loaders
+ * dispatched window events. The engine already reacts to the window events, so
+ * this bridge simply re-dispatches the SDK events as window events.
+ * Covers: ad display, purchase windows, tab switches, window minimize (items 1.3 / 4.7).
+ * Returns an unsubscribe function.
+ */
+export function subscribePlatformEvents(): () => void {
+  let unsubscribe: (() => void) | null = null;
+  let cancelled = false;
+  void initYandexSDK().then(() => {
+    if (cancelled) return;
+    const s = sdk();
+    if (!s?.on || !s?.off) return;
+    const onPause = () => window.dispatchEvent(new Event("game_api_pause"));
+    const onResume = () => window.dispatchEvent(new Event("game_api_resume"));
+    try {
+      s.on("game_api_pause", onPause);
+      s.on("game_api_resume", onResume);
+    } catch {
+      return;
+    }
+    unsubscribe = () => {
+      try {
+        s.off?.("game_api_pause", onPause);
+        s.off?.("game_api_resume", onResume);
+      } catch {
+        /* noop */
+      }
+    };
+  });
+  return () => {
+    cancelled = true;
+    unsubscribe?.();
+  };
 }

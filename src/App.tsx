@@ -6,6 +6,7 @@ import {
   reportGameReady,
   showFullscreenAdv,
   showRewardedVideo,
+  subscribePlatformEvents,
 } from "./game/ads";
 import { SFX } from "./game/audio";
 import { detectAppLanguage } from "./game/i18n";
@@ -262,6 +263,9 @@ export default function App() {
   // Yandex Games SDK init (no-op outside the platform)
   useEffect(() => {
     void initYandexSDK();
+    // platform pause/resume events (ysdk.on) → window events the engine listens to
+    const unsub = subscribePlatformEvents();
+    return () => unsub();
   }, []);
 
   // Requirement 2.14: auto-detect the user language AT STARTUP (before any gameplay)
