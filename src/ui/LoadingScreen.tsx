@@ -1,23 +1,9 @@
 // ---- pre-shift loading screen with live, stage-gated progress ----
+// All visible strings come from the translation set picked by the
+// language auto-detected at app startup (requirement 2.14).
 import { useEffect, useState } from "react";
 import { initYandexSDK } from "../game/ads";
-
-const STEPS = [
-  "ПОДКЛЮЧЕНИЕ К ПЛАТФОРМЕ",
-  "ЗАГРУЗКА ШРИФТОВ",
-  "ГЕНЕРАЦИЯ ГОРОДА",
-  "РАЗМЕЩЕНИЕ ПАЦИЕНТОВ",
-  "ВЫЕЗЖАЕМ!",
-];
-
-const TIPS = [
-  "Гудок (SPACE) заставляет машины уступать дорогу",
-  "Каждые 4 спасённых — новая смена: больные дальше и слабее",
-  "Заправка на АЗС: встань в жёлтую зону и остановись",
-  "Редкие скины открываются за достижения в гараже",
-  "Удар о здание на скорости отнимает здоровье пациента",
-  "Аптечки на дорогах лечат пациента на +24",
-];
+import { dict } from "../game/i18n";
 
 /** Mini ambulance that drives along the progress track. */
 function MiniAmbulance() {
@@ -37,6 +23,7 @@ function MiniAmbulance() {
 }
 
 export function LoadingScreen({ hidden }: { hidden: boolean }) {
+  const L = dict().loading;
   const [prog, setProg] = useState(0);
   const [sdkDone, setSdkDone] = useState(false);
   const [fontsDone, setFontsDone] = useState(false);
@@ -54,7 +41,7 @@ export function LoadingScreen({ hidden }: { hidden: boolean }) {
     } else {
       setFontsDone(true);
     }
-    const id = window.setInterval(() => setTip((t) => (t + 1) % TIPS.length), 2600);
+    const id = window.setInterval(() => setTip((t) => (t + 1) % L.tips.length), 2600);
     return () => {
       alive = false;
       window.clearInterval(id);
@@ -131,8 +118,8 @@ export function LoadingScreen({ hidden }: { hidden: boolean }) {
           <span className="beacon-blue h-3.5 w-3.5 rounded-full bg-[#2e6bff] shadow-[0_0_14px_#2e6bff]" />
         </div>
 
-        <div className="font-disp mt-4 text-sm tracking-[0.3em] text-[#ff5d70]">СПАСИ БОЛЬНОГО!</div>
-        <div className="font-disp mt-1 text-4xl text-white [text-shadow:0_4px_0_#0a1226]">ЗАГРУЗКА СМЕНЫ</div>
+        <div className="font-disp mt-4 text-sm tracking-[0.3em] text-[#ff5d70]">{L.brand}</div>
+        <div className="font-disp mt-1 text-4xl text-white [text-shadow:0_4px_0_#0a1226]">{L.title}</div>
 
         {/* progress track with the driving ambulance */}
         <div className="relative mt-9 w-full">
@@ -146,14 +133,14 @@ export function LoadingScreen({ hidden }: { hidden: boolean }) {
             />
           </div>
           <div className="mt-2 flex items-center justify-between">
-            <span className="font-disp text-[13px] tracking-widest text-[#ffcf3f]">{STEPS[step]}</span>
+            <span className="font-disp text-[13px] tracking-widest text-[#ffcf3f]">{L.stages[step]}</span>
             <span className="font-disp text-[13px] text-white">{pct}%</span>
           </div>
         </div>
 
         {/* stage checklist */}
         <div className="mt-5 grid w-full grid-cols-2 gap-x-4 gap-y-1.5">
-          {STEPS.slice(0, 4).map((label, i) => {
+          {L.stages.slice(0, 4).map((label, i) => {
             const done = step > i || prog >= 99.5;
             return (
               <div key={label} className="flex items-center gap-2">
@@ -176,8 +163,8 @@ export function LoadingScreen({ hidden }: { hidden: boolean }) {
 
         {/* rotating tip */}
         <div key={tip} className="toast-in mt-6 text-center">
-          <span className="font-disp text-[10px] tracking-[0.25em] text-[#8fa0c8]">СОВЕТ · </span>
-          <span className="text-[12px] font-semibold text-[#c3d0ee]">{TIPS[tip]}</span>
+          <span className="font-disp text-[10px] tracking-[0.25em] text-[#8fa0c8]">{L.tipLabel}</span>
+          <span className="text-[12px] font-semibold text-[#c3d0ee]">{L.tips[tip]}</span>
         </div>
       </div>
     </div>

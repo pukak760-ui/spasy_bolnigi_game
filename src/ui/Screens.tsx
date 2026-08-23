@@ -1,6 +1,7 @@
 // ---- menu, how-to, garage, pause & game-over screens ----
 import { useEffect, useState, type ReactNode } from "react";
 import type { GameStats, HudSnap } from "../game/engine";
+import { fmtScore } from "../game/i18n";
 import { fetchLeaderboard, type LBRow } from "../game/leaderboard";
 import {
   ACHIEVEMENTS,
@@ -62,7 +63,7 @@ function fmtDur(sec: number) {
 }
 
 function fmtTarget(a: AchievementDef) {
-  if (a.metric === "totalEarned") return `${a.target.toLocaleString("ru-RU")}₽`;
+  if (a.metric === "totalEarned") return `${fmtScore(a.target)}₽`;
   if (a.metric === "bestShiftTime" || a.metric === "totalPlayTime") return fmtDur(a.target);
   return String(a.target);
 }
@@ -177,14 +178,14 @@ function LeaderboardCard({ best }: { best: number }) {
               <RankBadge rank={r.rank} />
               <LbAvatar src={r.avatar} />
               <span className="min-w-0 flex-1 truncate text-[12px] font-bold text-white">{r.name}</span>
-              <span className="font-disp shrink-0 text-[13px] text-[#ffe27a]">{r.score.toLocaleString("ru-RU")}</span>
+              <span className="font-disp shrink-0 text-[13px] text-[#ffe27a]">{fmtScore(r.score)}</span>
             </div>
           ))}
       </div>
 
       <div className="flex items-center justify-between border-t border-[#27407a] px-4 py-2.5">
         <span className="text-[10px] font-bold tracking-widest text-[#8fa0c8]">ВАШ РЕКОРД</span>
-        <span className="font-disp text-base text-[#ffe27a]">{best.toLocaleString("ru-RU")}</span>
+        <span className="font-disp text-base text-[#ffe27a]">{fmtScore(best)}</span>
       </div>
     </div>
   );

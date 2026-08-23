@@ -8,6 +8,7 @@ import {
   showRewardedVideo,
 } from "./game/ads";
 import { SFX } from "./game/audio";
+import { detectAppLanguage } from "./game/i18n";
 import { Game, type GameStats, type HudSnap, type Toast } from "./game/engine";
 import { submitScore } from "./game/leaderboard";
 import {
@@ -261,6 +262,11 @@ export default function App() {
   // Yandex Games SDK init (no-op outside the platform)
   useEffect(() => {
     void initYandexSDK();
+  }, []);
+
+  // Requirement 2.14: auto-detect the user language AT STARTUP (before any gameplay)
+  useEffect(() => {
+    void detectAppLanguage();
   }, []);
 
   // Tell the platform the game is ready once fonts are loaded and the menu is visible.

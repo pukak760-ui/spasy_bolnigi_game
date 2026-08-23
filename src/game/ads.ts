@@ -43,6 +43,10 @@ interface YSDK {
   };
   leaderboards?: YLeaderboards;
   isAvailableMethod?: (method: string) => Promise<boolean>;
+  environment?: {
+    i18n?: { lang?: string; tld?: string };
+    payload?: string;
+  };
 }
 
 declare global {
