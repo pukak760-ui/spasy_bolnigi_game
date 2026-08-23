@@ -43,21 +43,72 @@
           window.__YSDK_LANG__ = lang || null;
           window.__YSDK_STATE__ = "ready";
           window.dispatchEvent(new Event("ysdk-ready"));
+          // LoadingAPI.ready() lives HERE, not in the app bundle: it must fire
+          // even if the bundle is slow or fails. The game is a light SPA that
+          // is playable right after init, so signal the platform shortly after.
+          scheduleReady(ysdk, 1200);
         } catch (e) {
           console.warn("YaGames.init failed", e);
           failSDK();
         }
       }
+      function scheduleReady(ysdk, delay) {
+        window.setTimeout(function () {
+          if (window.__YSDK_READY_SENT__) return;
+          window.__YSDK_READY_SENT__ = true;
+          try {
+            if (
+              ysdk &&
+              ysdk.features &&
+              ysdk.features.LoadingAPI &&
+              typeof ysdk.features.LoadingAPI.ready === "function"
+            ) {
+              ysdk.features.LoadingAPI.ready();
+            }
+          } catch (e) {
+            console.warn("LoadingAPI.ready failed", e);
+          }
+        }, delay);
+      }
       function failSDK() {
         window.__YSDK_STATE__ = "failed";
         window.dispatchEvent(new Event("ysdk-failed"));
       }
+      // Failsafe: even if YaGames.init() is unusually slow, ready() must still
+      // be sent once the instance appears — otherwise the platform splash
+      // stays on screen and the loader indicator turns red.
+      window.addEventListener("load", function () {
+        window.setTimeout(function () {
+          if (window.ysdk && !window.__YSDK_READY_SENT__) scheduleReady(window.ysdk, 0);
+        }, 2500);
+      });
     </script>
     <!-- Yandex Games SDK -->
     <script async src="/sdk.js" onload="initSDK()" onerror="failSDK()"></script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Boot splash: pure inline styles, no external deps. Shown instantly,
+           removed automatically the moment React mounts. If the bundle ever
+           fails to start, the player still sees this instead of a black screen. -->
+      <div id="boot-splash" style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(1100px 620px at 50% -12%, #16234e 0%, #0a1126 55%, #070c18 100%);z-index:9999;font-family:'Segoe UI',Tahoma,Verdana,sans-serif;">
+        <div style="display:flex;align-items:center;gap:14px;">
+          <span style="width:12px;height:12px;border-radius:50%;background:#ff2d40;box-shadow:0 0 14px #ff2d40;animation:bootblink .55s steps(1) infinite;"></span>
+          <div style="width:54px;height:54px;display:flex;align-items:center;justify-content:center;background:#ff3b4e;box-shadow:0 0 36px rgba(255,59,78,.6);">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="#fff"><path d="M9 2h6v7h7v6h-7v7H9v-7H2V9h7V2z"/></svg>
+          </div>
+          <span style="width:12px;height:12px;border-radius:50%;background:#2e6bff;box-shadow:0 0 14px #2e6bff;animation:bootblink .55s steps(1) infinite reverse;"></span>
+        </div>
+        <div style="margin-top:16px;font-weight:800;font-size:13px;letter-spacing:.3em;color:#ff5d70;">СПАСИ БОЛЬНОГО!</div>
+        <div style="width:190px;height:4px;background:#16234e;margin-top:16px;overflow:hidden;">
+          <div style="width:40%;height:100%;background:linear-gradient(90deg,#ffcf3f,#ff3b4e);animation:bootbar 1.1s ease-in-out infinite alternate;"></div>
+        </div>
+        <style>
+          @keyframes bootbar { from { transform: translateX(-70%); } to { transform: translateX(280%); } }
+          @keyframes bootblink { 0%,49% { opacity: 1; } 50%,100% { opacity: .15; } }
+        </style>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

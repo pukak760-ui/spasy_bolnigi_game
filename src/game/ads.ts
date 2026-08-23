@@ -144,11 +144,14 @@ const sdk = () => window.ysdk;
 
 /**
  * Signal the platform that the game has finished loading and the main menu is shown.
- * Must be called once, exactly when the player sees the menu (moderation requirement).
+ * The PRIMARY call is made inline in index.html (works even if the bundle fails);
+ * this is an idempotent duplicate — both sides share the window flag.
  */
 export function reportGameReady() {
-  if (reportedReady) return;
+  const w = window as Window & { __YSDK_READY_SENT__?: boolean };
+  if (reportedReady || w.__YSDK_READY_SENT__) return;
   reportedReady = true;
+  w.__YSDK_READY_SENT__ = true;
   void initYandexSDK().then(() => {
     try {
       sdk()?.features?.LoadingAPI?.ready?.();

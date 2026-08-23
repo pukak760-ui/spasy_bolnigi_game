@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   gameplayStart,
   gameplayStop,
@@ -273,20 +273,21 @@ export default function App() {
     void detectAppLanguage();
   }, []);
 
-  // Tell the platform the game is ready once fonts are loaded and the menu is visible.
+  // Duplicate LoadingAPI.ready() signal from the app side (idempotent — the
+  // primary call is inline in index.html). Fires right after the menu paints;
+  // deliberately NOT gated on document.fonts.ready: webfonts are optional and
+  // must never delay the platform loading signal.
   useEffect(() => {
-    let done = false;
-    const fire = () => {
-      if (!done) {
-        done = true;
-        reportGameReady();
-      }
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => reportGameReady());
+    });
+    const t = window.setTimeout(() => reportGameReady(), 1500);
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      window.clearTimeout(t);
     };
-    const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
-    if (fonts?.ready) fonts.ready.then(fire).catch(fire);
-    else window.setTimeout(fire, 900);
-    const t = window.setTimeout(fire, 2600); // hard fallback
-    return () => window.clearTimeout(t);
   }, []);
 
   /** Full silence while an ad is on screen; restored to the user's setting on ad close. */
