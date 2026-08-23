@@ -22,6 +22,29 @@ if (-not (Test-Path (Join-Path $dist 'index.html'))) {
     exit 1
 }
 
+# ---------- integrity guard: refuse to pack a STALE or broken build ----------
+$html = Get-Content (Join-Path $dist 'index.html') -Raw
+$lastWrite = (Get-Item (Join-Path $dist 'index.html')).LastWriteTime
+Write-Host ('  Build date   : {0}' -f $lastWrite)
+
+$problems = @()
+if ($html -notmatch 'scheduleReady')        { $problems += 'missing inline LoadingAPI.ready() (scheduleReady)' }
+if ($html -notmatch 'boot-splash')          { $problems += 'missing boot splash' }
+if ($html -notmatch 'environment\.i18n\.lang') { $problems += 'missing language auto-detection (2.14)' }
+if ($html -match 'src="/assets/')           { $problems += 'ABSOLUTE asset paths found (stale build, base "./" lost)' }
+if ($html -notmatch 'src="\./assets/')      { $problems += 'no relative ./assets/ paths found' }
+
+if ($problems.Count -gt 0) {
+    Write-Host ''
+    Write-Host 'REFUSING TO PACK — the build in dist/ is stale or broken:' -ForegroundColor Red
+    foreach ($p in $problems) { Write-Host ('   - ' + $p) -ForegroundColor Red }
+    Write-Host ''
+    Write-Host 'Run "npm run build" first, then start this script again.' -ForegroundColor Yellow
+    Read-Host 'Press Enter to exit'
+    exit 1
+}
+Write-Host '  Build check  : OK (all platform fixes are present)' -ForegroundColor Green
+
 # fresh archive every time
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
 

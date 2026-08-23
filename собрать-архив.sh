@@ -8,6 +8,21 @@ if [ ! -f dist/index.html ]; then
   exit 1
 fi
 
+# --- защита от устаревшей сборки: все критичные фиксы платформы должны быть на месте ---
+HTML=$(cat dist/index.html)
+echo "  Дата сборки: $(date -r dist/index.html '+%Y-%m-%d %H:%M:%S' 2>/dev/null || stat -c %y dist/index.html)"
+BAD=0
+echo "$HTML" | grep -q 'scheduleReady'        || { echo "   - нет inline LoadingAPI.ready()"; BAD=1; }
+echo "$HTML" | grep -q 'boot-splash'          || { echo "   - нет boot-сплэша"; BAD=1; }
+echo "$HTML" | grep -q 'environment.i18n.lang' || { echo "   - нет автоопределения языка (2.14)"; BAD=1; }
+echo "$HTML" | grep -q 'src="/assets/'        && { echo "   - АБСОЛЮТНЫЕ пути (устаревшая сборка)"; BAD=1; }
+echo "$HTML" | grep -q 'src="./assets/'       || { echo "   - нет относительных путей ./assets/"; BAD=1; }
+if [ "$BAD" = "1" ]; then
+  echo "ОТКАЗ: сборка в dist/ устарела. Сначала выполните npm run build, затем повторите."
+  exit 1
+fi
+echo "  Проверка сборки: ОК (все фиксы платформы на месте)"
+
 rm -f spasi-bolnogo-yandex.zip
 
 if command -v zip >/dev/null 2>&1; then
