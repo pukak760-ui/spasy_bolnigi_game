@@ -15,17 +15,21 @@
     <style>
       html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #070c18; }
     </style>
-    <!-- Yandex Games SDK: loaded asynchronously, the game is notified via events.
-         Relative path /sdk.js is the variant recommended for uploading to the Yandex server. -->
+    <!-- Yandex Games SDK: canonical integration per the official docs
+         (https://yandex.ru/dev/games/doc/dg/sdk/sdk-about.html).
+         /sdk.js is the relative path recommended when the archive is uploaded
+         to the Yandex server; YaGames.init() is called directly in onload. -->
     <script>
-      function initSDK() {
-        // onload fired, but double-check the SDK object exists (docs: YaGames.init after script load)
-        if (typeof YaGames === "undefined") {
+      async function initSDK() {
+        try {
+          const ysdk = await YaGames.init();
+          window.ysdk = ysdk;
+          window.__YSDK_STATE__ = "ready";
+          window.dispatchEvent(new Event("ysdk-ready"));
+        } catch (e) {
+          console.warn("YaGames.init failed", e);
           failSDK();
-          return;
         }
-        window.__YSDK_STATE__ = "loaded";
-        window.dispatchEvent(new Event("ysdk-loaded"));
       }
       function failSDK() {
         window.__YSDK_STATE__ = "failed";

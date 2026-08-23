@@ -1,8 +1,10 @@
 // ---- Yandex Games SDK wrappers: init, fullscreen ads, rewarded video, gameplay/loading signals ----
 // Docs: https://yandex.ru/dev/games/
-// /sdk.js is included in index.html as <script async src="/sdk.js" onload="initSDK()" onerror="failSDK()">.
-// initSDK()/failSDK() set window.__YSDK_STATE__ and dispatch "ysdk-loaded"/"ysdk-failed",
-// which this module waits for so YaGames.init() is never called before the script loads.
+// index.html contains the canonical docs snippet:
+//   <script async src="/sdk.js" onload="initSDK()" onerror="failSDK()"></script>
+// where initSDK() calls `YaGames.init()` directly and stores the instance in
+// window.ysdk, then dispatches "ysdk-ready". This module consumes that instance
+// (with a defensive fallback init of its own) so the SDK is never used before init.
 
 interface YAdvCallbacks {
   onOpen?: () => void;
@@ -53,7 +55,7 @@ declare global {
   interface Window {
     YaGames?: { init: (opts?: unknown) => Promise<YSDK> };
     ysdk?: YSDK;
-    __YSDK_STATE__?: "loaded" | "failed";
+    __YSDK_STATE__?: "ready" | "failed";
   }
 }
 
@@ -61,9 +63,12 @@ let readyPromise: Promise<boolean> | null = null;
 let reportedReady = false;
 
 /**
- * Initializes the SDK. Safe to call anytime: if /sdk.js is still loading it waits
- * for the onload/onerror events (with a hard timeout), so `YaGames` is always defined
- * here. Resolves `true` when the platform SDK is ready, `false` outside Yandex Games.
+ * Resolves when the SDK is ready. `YaGames.init()` itself is called by the
+ * canonical inline handler in index.html (onload → initSDK()). This function
+ * only consumes the result: it returns the already-initialized instance, waits
+ * for the "ysdk-ready"/"ysdk-failed" events, or — as a defensive fallback when
+ * the inline handler somehow did not run — initializes the SDK itself.
+ * Resolves `true` on the platform, `false` outside Yandex Games.
  */
 export function initYandexSDK(): Promise<boolean> {
   if (!readyPromise) {
@@ -73,13 +78,14 @@ export function initYandexSDK(): Promise<boolean> {
         if (!settled) {
           settled = true;
           window.clearTimeout(giveUp);
-          window.removeEventListener("ysdk-loaded", onLoaded);
+          window.removeEventListener("ysdk-ready", onReady);
           window.removeEventListener("ysdk-failed", onFailed);
           resolve(ok);
         }
       };
 
-      const tryInit = () => {
+      // Defensive fallback: script is present but the inline onload handler never ran.
+      const fallbackInit = () => {
         const YG = window.YaGames;
         if (!YG) {
           done(false);
@@ -88,7 +94,7 @@ export function initYandexSDK(): Promise<boolean> {
         YG.init()
           .then((sdk) => {
             window.ysdk = sdk;
-            console.info("[ads] Yandex Games SDK initialized");
+            console.info("[ads] Yandex Games SDK initialized (fallback path)");
             done(true);
           })
           .catch((e) => {
@@ -97,21 +103,33 @@ export function initYandexSDK(): Promise<boolean> {
           });
       };
 
-      const onLoaded = () => tryInit();
+      const onReady = () => {
+        console.info("[ads] Yandex Games SDK initialized");
+        done(true);
+      };
       const onFailed = () => {
         console.info("[ads] /sdk.js failed to load — running outside Yandex Games");
         done(false);
       };
 
-      if (window.__YSDK_STATE__ === "loaded") return tryInit();
-      if (window.__YSDK_STATE__ === "failed") return onFailed();
-      if (window.YaGames) return tryInit();
+      // Already initialized by the inline handler (most common case on the platform)?
+      if (window.ysdk || window.__YSDK_STATE__ === "ready") return done(true);
+      if (window.__YSDK_STATE__ === "failed") return done(false);
 
-      window.addEventListener("ysdk-loaded", onLoaded);
+      // Wait for the inline handler's events...
+      window.addEventListener("ysdk-ready", onReady);
       window.addEventListener("ysdk-failed", onFailed);
       const giveUp = window.setTimeout(() => {
-        console.info("[ads] SDK not detected in time — running outside Yandex Games");
-        done(false);
+        if (window.YaGames && !window.ysdk) {
+          // ...but if 5s passed with the script loaded and no init — heal ourselves.
+          console.info("[ads] inline initSDK() never ran — falling back to direct init");
+          window.removeEventListener("ysdk-ready", onReady);
+          window.removeEventListener("ysdk-failed", onFailed);
+          fallbackInit();
+        } else {
+          console.info("[ads] SDK not detected in time — running outside Yandex Games");
+          done(false);
+        }
       }, 5000);
     });
   }
