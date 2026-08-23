@@ -19,6 +19,11 @@
          Relative path /sdk.js is the variant recommended for uploading to the Yandex server. -->
     <script>
       function initSDK() {
+        // onload fired, but double-check the SDK object exists (docs: YaGames.init after script load)
+        if (typeof YaGames === "undefined") {
+          failSDK();
+          return;
+        }
         window.__YSDK_STATE__ = "loaded";
         window.dispatchEvent(new Event("ysdk-loaded"));
       }
