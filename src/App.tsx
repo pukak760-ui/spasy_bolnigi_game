@@ -115,6 +115,9 @@ function GameScreen({
         },
         onToast: addToast,
         onPauseRequest: togglePause,
+        onResumeRequest: () => {
+          if (!overRef.current) setPaused(false);
+        },
         onLoaded,
       },
     });

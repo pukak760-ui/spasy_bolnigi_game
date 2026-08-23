@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#13224d"/>
+      <stop offset="1" stop-color="#060b1d"/>
+    </linearGradient>
+    <radialGradient id="moonGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#fff4c8" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#fff4c8" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="redGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ff2d40" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#ff2d40" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="blueGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#2e6bff" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#2e6bff" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="round">
+      <rect x="0" y="0" width="512" height="512" rx="96"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#round)">
+    <rect width="512" height="512" fill="url(#bg)"/>
+
+    <!-- stars -->
+    <g fill="#dceaff">
+      <circle cx="70" cy="70" r="3" opacity="0.9"/>
+      <circle cx="140" cy="120" r="2" opacity="0.7"/>
+      <circle cx="220" cy="60" r="2.5" opacity="0.8"/>
+      <circle cx="300" cy="110" r="2" opacity="0.6"/>
+      <circle cx="452" cy="150" r="3" opacity="0.85"/>
+      <circle cx="480" cy="60" r="2" opacity="0.6"/>
+      <circle cx="40" cy="180" r="2" opacity="0.5"/>
+    </g>
+
+    <!-- moon -->
+    <circle cx="404" cy="92" r="86" fill="url(#moonGlow)"/>
+    <circle cx="404" cy="92" r="34" fill="#fff4c8"/>
+    <circle cx="392" cy="84" r="6" fill="#e3d29a" opacity="0.6"/>
+    <circle cx="414" cy="102" r="4.5" fill="#e3d29a" opacity="0.6"/>
+
+    <!-- skyline -->
+    <g fill="#16244c">
+      <rect x="0" y="270" width="74" height="130"/>
+      <rect x="84" y="230" width="66" height="170"/>
+      <rect x="160" y="282" width="58" height="118"/>
+      <rect x="330" y="250" width="62" height="150"/>
+      <rect x="402" y="290" width="52" height="110"/>
+      <rect x="462" y="240" width="50" height="160"/>
+    </g>
+    <g fill="#ffd98a">
+      <rect x="96" y="246" width="10" height="12"/><rect x="120" y="270" width="10" height="12"/>
+      <rect x="96" y="296" width="10" height="12"/><rect x="344" y="266" width="10" height="12"/>
+      <rect x="368" y="292" width="10" height="12"/><rect x="474" y="258" width="10" height="12"/>
+      <rect x="16" y="290" width="10" height="12"/><rect x="40" y="316" width="10" height="12"/>
+      <rect x="176" y="300" width="10" height="12"/><rect x="416" y="310" width="10" height="12"/>
+    </g>
+
+    <!-- road -->
+    <rect x="0" y="392" width="512" height="120" fill="#1b2029"/>
+    <rect x="0" y="392" width="512" height="12" fill="#8f99ad"/>
+    <rect x="0" y="404" width="512" height="4" fill="#7c8598"/>
+    <g fill="#e8b83a">
+      <rect x="16" y="452" width="52" height="8" rx="4"/>
+      <rect x="116" y="452" width="52" height="8" rx="4"/>
+      <rect x="216" y="452" width="52" height="8" rx="4"/>
+      <rect x="316" y="452" width="52" height="8" rx="4"/>
+      <rect x="416" y="452" width="52" height="8" rx="4"/>
+    </g>
+
+    <!-- siren glows -->
+    <ellipse cx="196" cy="212" rx="92" ry="52" fill="url(#redGlow)"/>
+    <ellipse cx="268" cy="212" rx="92" ry="52" fill="url(#blueGlow)"/>
+
+    <!-- ambulance -->
+    <g>
+      <ellipse cx="252" cy="402" rx="176" ry="16" fill="#000" opacity="0.35"/>
+      <!-- body -->
+      <rect x="76" y="252" width="304" height="128" rx="26" fill="#f4f7ff" stroke="#0a0e1a" stroke-width="6"/>
+      <!-- cab window -->
+      <rect x="316" y="266" width="52" height="100" rx="14" fill="#f4f7ff"/>
+      <rect x="322" y="274" width="24" height="84" rx="9" fill="#9fd7ff"/>
+      <!-- hood -->
+      <rect x="362" y="272" width="22" height="94" rx="10" fill="#dfe6f2"/>
+      <!-- headlight -->
+      <rect x="376" y="292" width="10" height="22" rx="5" fill="#fff3bd"/>
+      <!-- red stripe -->
+      <rect x="76" y="300" width="238" height="30" fill="#ff3b4e"/>
+      <!-- cross emblem -->
+      <circle cx="196" cy="315" r="38" fill="#2e6bff" stroke="#fff" stroke-width="6"/>
+      <rect x="188" y="293" width="16" height="44" rx="4" fill="#fff"/>
+      <rect x="174" y="307" width="44" height="16" rx="4" fill="#fff"/>
+      <!-- light bar -->
+      <rect x="176" y="222" width="112" height="36" rx="10" fill="#1a2030" stroke="#0a0e1a" stroke-width="5"/>
+      <rect x="186" y="230" width="40" height="20" rx="6" fill="#ff2d40"/>
+      <rect x="238" y="230" width="40" height="20" rx="6" fill="#2e6bff"/>
+      <!-- wheels -->
+      <circle cx="148" cy="384" r="34" fill="#10131a"/>
+      <circle cx="148" cy="384" r="15" fill="#3a4256"/>
+      <circle cx="330" cy="384" r="34" fill="#10131a"/>
+      <circle cx="330" cy="384" r="15" fill="#3a4256"/>
+    </g>
+  </g>
+
+  <rect x="3" y="3" width="506" height="506" rx="94" fill="none" stroke="#2a3f73" stroke-width="6"/>
+</svg>

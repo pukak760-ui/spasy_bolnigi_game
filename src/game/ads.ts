@@ -158,7 +158,21 @@ export function gameplayStop() {
  * Fullscreen interstitial (shown strictly after every 3rd finished shift).
  * `onClose` is guaranteed to fire exactly once — restore sound there.
  */
+// platform rule: at most one interstitial per minute
+let lastFullscreenAt = 0;
+const FULLSCREEN_MIN_INTERVAL_MS = 60_000;
+
 export function showFullscreenAdv(opts: { onOpen?: () => void; onClose: () => void }) {
+  const now = Date.now();
+  if (now - lastFullscreenAt < FULLSCREEN_MIN_INTERVAL_MS) {
+    console.info("[ads] fullscreen skipped (1-minute cooldown)");
+    window.setTimeout(() => {
+      opts.onOpen?.();
+      opts.onClose();
+    }, 60);
+    return;
+  }
+  lastFullscreenAt = now;
   void initYandexSDK().then(() => {
     const s = sdk();
     if (!s?.adv) {

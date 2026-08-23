@@ -55,6 +55,8 @@ export interface Callbacks {
   onGameOver: (s: GameStats) => void;
   onToast: (t: Toast) => void;
   onPauseRequest: () => void;
+  /** Platform asked the game to resume (Yandex `game_api_resume` event). */
+  onResumeRequest?: () => void;
   /** Fired once, right after the very first frame has been rendered. */
   onLoaded?: () => void;
 }
@@ -260,6 +262,15 @@ export class Game {
       if (this.state === "run" && !this.paused) this.cb.onPauseRequest();
     }
   };
+  // Yandex platform events: the platform itself asks the game to pause/resume
+  private onApiPause = () => {
+    this.sfx.siren(false);
+    this.sfx.engine(0);
+    if (this.state === "run" && !this.paused) this.cb.onPauseRequest();
+  };
+  private onApiResume = () => {
+    this.cb.onResumeRequest?.();
+  };
   private onResize = () => this.resize();
 
   constructor(canvas: HTMLCanvasElement, opts: GameOptions) {
@@ -286,6 +297,8 @@ export class Game {
     window.addEventListener("keyup", this.onKeyUp);
     window.addEventListener("blur", this.onBlur);
     window.addEventListener("visibilitychange", this.onVis);
+    window.addEventListener("game_api_pause", this.onApiPause);
+    window.addEventListener("game_api_resume", this.onApiResume);
     window.addEventListener("resize", this.onResize);
     this.resize();
   }
@@ -350,6 +363,8 @@ export class Game {
     window.removeEventListener("keyup", this.onKeyUp);
     window.removeEventListener("blur", this.onBlur);
     window.removeEventListener("visibilitychange", this.onVis);
+    window.removeEventListener("game_api_pause", this.onApiPause);
+    window.removeEventListener("game_api_resume", this.onApiResume);
     window.removeEventListener("resize", this.onResize);
     this.sfx.siren(false);
     this.sfx.engine(0);
