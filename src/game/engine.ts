@@ -313,7 +313,7 @@ export class Game {
     this.camY = this.py;
     this.pattern = this.ctx.createPattern(this.world.tile, "repeat");
 
-    for (let i = 0; i < 12; i++) this.spawnCar(true);
+    for (let i = 0; i < 26; i++) this.spawnCar(true);
     this.spawnPatient(true);
 
     window.addEventListener("keydown", this.onKeyDown);
@@ -546,8 +546,8 @@ export class Game {
     // ----- traffic -----
     this.updateCars(dt);
     this.carT += dt;
-    const wantCars = Math.min(22, 12 + this.level * 2);
-    if (this.carT > 2.5 && this.cars.length < wantCars) {
+    const wantCars = Math.min(40, 24 + this.level * 3);
+    if (this.carT > 1.2 && this.cars.length < wantCars) {
       this.carT = 0;
       this.spawnCar(false);
     }
@@ -632,7 +632,7 @@ export class Game {
       if (c.turn) {
         // ----- smooth intersection arc: the car glides along a short curve
         // from its old lane onto the new one (no teleporting, ever) -----
-        c.turn.t += dt * 2.1; // ~0.5 s maneuver
+        c.turn.t += dt * 2.4; // ~0.42 s maneuver
         const k = Math.min(1, c.turn.t);
         const e = k * k * (3 - 2 * k); // smoothstep easing
         c.x = c.turn.sx + (c.turn.tx - c.turn.sx) * e;
@@ -678,19 +678,23 @@ export class Game {
         c.x += d.x * c.speed * dt;
         c.y += d.y * c.speed * dt;
 
-        // fixed axis: eased pull toward the lane — or toward the roadside
-        // shoulder while yielding to the ambulance horn
+        // fixed axis: eased pull toward the lane — or toward the ROADSIDE
+        // shoulder while yielding to the ambulance horn. The shoulder is the
+        // OUTER edge of the road relative to the car's own half:
+        // east/north traffic drives the far half (lanes 72/98) → pulls to RW-10;
+        // south/west traffic drives the near half (lanes 22/48) → pulls to 10.
+        // (The previous version used Math.sign(lane), which is always +1 and
+        // dragged every car to the middle of the road — fixed.)
         const laneK = Math.min(1, dt * 3.6);
+        const shoulderOff = c.dir === 0 || c.dir === 3 ? RW - 10 : 10;
         if (c.dir === 1 || c.dir === 3) {
           const grid = Math.round(c.x / B) * B;
           const lanePos = grid + c.lane;
-          const shoulder = grid + Math.sign(c.lane) * (HALF - 18);
-          c.x += ((c.yieldT > 0 ? shoulder : lanePos) - c.x) * laneK;
+          c.x += ((c.yieldT > 0 ? grid + shoulderOff : lanePos) - c.x) * laneK;
         } else {
           const grid = Math.round(c.y / B) * B;
           const lanePos = grid + c.lane;
-          const shoulder = grid + Math.sign(c.lane) * (HALF - 18);
-          c.y += ((c.yieldT > 0 ? shoulder : lanePos) - c.y) * laneK;
+          c.y += ((c.yieldT > 0 ? grid + shoulderOff : lanePos) - c.y) * laneK;
         }
 
         // intersection turning
@@ -745,7 +749,9 @@ export class Game {
 
   private turnCar(c: Car, ix: number, iy: number, options: number[]) {
     const straight = options[0];
-    const choice = Math.random() < 0.62 ? straight : options[1 + Math.floor(Math.random() * (options.length - 1))];
+    // ~50% of cars turn onto a random side street at every intersection,
+    // so traffic visibly flows through the whole city grid
+    const choice = Math.random() < 0.5 ? straight : options[1 + Math.floor(Math.random() * (options.length - 1))];
     if (choice === straight) {
       // going straight: just commit the free axis past the intersection line
       if (straight === 0) c.x = ix + 2;

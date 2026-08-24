@@ -24,6 +24,11 @@ if grep -q 'src="/assets/\|href="/assets/' dist/index.html; then
 fi
 echo "  Проверка сборки: OK (фиксы на месте, пути относительные)"
 
+# Санитайзер: вырезает внешние http(s):// ссылки из сборки (оставляя
+# http://www.w3.org — это SVG-неймспейсы, а не сетевые запросы). Без этого
+# модерация Яндекса отклонит архив: «обнаружена ссылка на сервисное хранилище».
+node sanitize-dist.mjs || { echo "ОШИБКА: санитайзер не отработал (нужен Node.js)"; exit 1; }
+
 rm -f spasi-bolnogo-yandex.zip
 
 if command -v zip >/dev/null 2>&1; then
@@ -71,12 +76,18 @@ missing = sorted(r for r in refs if r not in names)
 if missing:
     errors.append("index.html ссылается на файлы, которых НЕТ в архиве: " + ', '.join(missing))
 
-# внешних ссылок на сервисные хранилища/CDN быть не должно (шрифты, картинки — только свои)
+# ВНЕШНИХ http(s):// ссылок не должно быть НИ В ОДНОМ файле сборки — сканер
+# Яндекса («сервисное хранилище») гребёт все файлы архива, включая JS-бандл.
+# http://www.w3.org разрешён: это SVG/XML-неймспейсы, они не ходят в сеть.
 import glob
-external = re.findall(r'(?:src|href)=["\']https?://[^"\']+', html)
-for css in glob.glob('dist/assets/*.css'):
-    text = open(css, encoding='utf-8').read()
-    external += re.findall(r'url\(\s*["\']?https?://[^)"\']+|@import\s+[^;]*https?://[^;]+', text)
+external = []
+for path in glob.glob('dist/**/*', recursive=True):
+    if not path.lower().endswith(('.js', '.css', '.html', '.svg')):
+        continue
+    text = open(path, encoding='utf-8', errors='ignore').read()
+    for m in re.finditer(r'https?://', text):
+        if not text[m.start():m.start()+23].startswith('http://www.w3.org'):
+            external.append(path + ': ' + text[m.start():m.start()+40])
 if external:
     errors.append("в сборке ВНЕШНИЕ ссылки (запрещено модерацией): " + ', '.join(external[:5]))
 

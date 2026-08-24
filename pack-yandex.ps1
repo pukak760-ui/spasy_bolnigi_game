@@ -62,6 +62,18 @@ if ($badPaths.Count -gt 0) {
 }
 Write-Host '  Build check  : OK (all platform fixes present, paths relative)' -ForegroundColor Green
 
+# ---------------- sanitize: strip external URLs from the build ----------------
+# Yandex moderation rejects archives containing links to external services or
+# storage ("service storage" rule). Its scanner greps every file in the ZIP,
+# so even license-banner URLs inside the minified bundle would trigger it.
+# The sanitizer keeps http://www.w3.org/* (SVG namespace ids, never fetched).
+node (Join-Path $PSScriptRoot 'sanitize-dist.mjs')
+if ($LASTEXITCODE -ne 0) {
+    Write-Host 'ERROR: URL sanitizer failed. Make sure Node.js is installed.' -ForegroundColor Red
+    Read-Host 'Press Enter to exit'
+    exit 1
+}
+
 # ---------------- create the ZIP manually, one entry per file ----------------
 # Entry names are forced to FORWARD slashes (see header). $false = do not
 # include the dist folder itself, so index.html lands in the archive root.
@@ -118,21 +130,23 @@ if ($assetCount -lt 2) {
     $fail = $true
 }
 
-# rule 4: NO external service links anywhere in the build
-# (Yandex moderation rejects builds that reference external storages/CDNs,
-# e.g. Google Fonts). Only local ./assets and ./icon.svg are allowed.
-$extHtml = [regex]::Matches($html, '(src|href)=[\x22\x27]https?://')
-$extCss  = 0
-$cssDir = Join-Path $dist 'assets'
-if (Test-Path $cssDir) {
-    foreach ($cssFile in Get-ChildItem $cssDir -Filter '*.css') {
-        $cssText = Get-Content $cssFile.FullName -Raw
-        $extCss += [regex]::Matches($cssText, 'url\(\s*[\x22\x27]?https?://|@import\s+[^;]*https?://').Count
+# rule 4: NO external http(s) links ANYWHERE in the build (index.html, JS, CSS,
+# SVG). Yandex moderation's "service storage" scanner greps every file in the
+# ZIP — even license-banner URLs inside the minified bundle trigger it.
+# http://www.w3.org/* is allowed: those are SVG/XML namespace identifiers that
+# are never fetched over the network.
+$extTotal = 0
+$textFiles = @(Get-ChildItem $dist -Recurse -File -Include '*.js', '*.css', '*.html', '*.svg')
+foreach ($tf in $textFiles) {
+    $t = Get-Content $tf.FullName -Raw
+    foreach ($m in [regex]::Matches($t, 'https?://')) {
+        $snippet = $t.Substring($m.Index, [math]::Min(24, $t.Length - $m.Index))
+        if (-not $snippet.StartsWith('http://www.w3.org')) { $extTotal++ }
     }
 }
-if ($extHtml.Count -gt 0 -or $extCss -gt 0) {
-    Write-Host ('FAILED: the build contains EXTERNAL links ({0} in index.html, {1} in CSS).' -f $extHtml.Count, $extCss) -ForegroundColor Red
-    Write-Host '        Every resource (fonts, images, scripts) must be bundled into the archive.' -ForegroundColor Red
+if ($extTotal -gt 0) {
+    Write-Host ('FAILED: the build still contains {0} external link(s).' -f $extTotal) -ForegroundColor Red
+    Write-Host '        The sanitizer (sanitize-dist.mjs) must have failed to run.' -ForegroundColor Red
     $fail = $true
 }
 
