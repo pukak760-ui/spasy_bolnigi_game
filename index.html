@@ -6,29 +6,13 @@
     <title>Спаси Больного! — Скорая Помощь</title>
     <link rel="icon" type="image/svg+xml" href="./icon.svg" />
     <link rel="apple-touch-icon" href="./icon.svg" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <!-- Webfonts are loaded NON-BLOCKING (preload + swap-on-load): an external
-         stylesheet must never stall the first paint — inside the platform's
-         sandboxed iframe a blocked/hanging CDN request would otherwise leave
-         the player with a black screen. The UI has full system-font fallbacks. -->
-    <link
-      rel="preload"
-      as="style"
-      href="https://fonts.googleapis.com/css2?family=Russo+One&family=Rubik:wght@400;500;600;700;800;900&display=swap"
-      onload="this.onload=null;this.rel='stylesheet'"
-    />
-    <noscript>
-      <link
-        rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Russo+One&family=Rubik:wght@400;500;600;700;800;900&display=swap"
-      />
-    </noscript>
+    <!-- All webfonts are BUNDLED into the archive (fontsource woff2 assets).
+         The game makes ZERO external requests — it must be fully self-contained
+         per Yandex Games moderation (no service-storage links allowed). -->
     <style>
       html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #070c18; }
     </style>
-    <!-- Yandex Games SDK: canonical integration per the official docs
-         (https://yandex.ru/dev/games/doc/dg/sdk/sdk-about.html).
+    <!-- Yandex Games SDK: canonical integration per the official docs.
          /sdk.js is the relative path recommended when the archive is uploaded
          to the Yandex server; YaGames.init() is called directly in onload. -->
     <script>

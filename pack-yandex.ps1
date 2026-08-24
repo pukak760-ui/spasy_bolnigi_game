@@ -118,7 +118,25 @@ if ($assetCount -lt 2) {
     $fail = $true
 }
 
-# rule 3 (bulletproof): every file referenced by index.html must exist in the ZIP
+# rule 4: NO external service links anywhere in the build
+# (Yandex moderation rejects builds that reference external storages/CDNs,
+# e.g. Google Fonts). Only local ./assets and ./icon.svg are allowed.
+$extHtml = [regex]::Matches($html, '(src|href)=[\x22\x27]https?://')
+$extCss  = 0
+$cssDir = Join-Path $dist 'assets'
+if (Test-Path $cssDir) {
+    foreach ($cssFile in Get-ChildItem $cssDir -Filter '*.css') {
+        $cssText = Get-Content $cssFile.FullName -Raw
+        $extCss += [regex]::Matches($cssText, 'url\(\s*[\x22\x27]?https?://|@import\s+[^;]*https?://').Count
+    }
+}
+if ($extHtml.Count -gt 0 -or $extCss -gt 0) {
+    Write-Host ('FAILED: the build contains EXTERNAL links ({0} in index.html, {1} in CSS).' -f $extHtml.Count, $extCss) -ForegroundColor Red
+    Write-Host '        Every resource (fonts, images, scripts) must be bundled into the archive.' -ForegroundColor Red
+    $fail = $true
+}
+
+# rule 5 (bulletproof): every file referenced by index.html must exist in the ZIP
 $refs = [regex]::Matches($html, '\./assets/([A-Za-z0-9._-]+)') | ForEach-Object { 'assets/' + $_.Groups[1].Value }
 $refs += [regex]::Matches($html, 'href="\./([A-Za-z0-9._-]+)"') | ForEach-Object { $_.Groups[1].Value }
 $refs = @($refs | Sort-Object -Unique)

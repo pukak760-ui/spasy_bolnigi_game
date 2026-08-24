@@ -71,6 +71,15 @@ missing = sorted(r for r in refs if r not in names)
 if missing:
     errors.append("index.html ссылается на файлы, которых НЕТ в архиве: " + ', '.join(missing))
 
+# внешних ссылок на сервисные хранилища/CDN быть не должно (шрифты, картинки — только свои)
+import glob
+external = re.findall(r'(?:src|href)=["\']https?://[^"\']+', html)
+for css in glob.glob('dist/assets/*.css'):
+    text = open(css, encoding='utf-8').read()
+    external += re.findall(r'url\(\s*["\']?https?://[^)"\']+|@import\s+[^;]*https?://[^;]+', text)
+if external:
+    errors.append("в сборке ВНЕШНИЕ ссылки (запрещено модерацией): " + ', '.join(external[:5]))
+
 if errors:
     print()
     for e in errors:
