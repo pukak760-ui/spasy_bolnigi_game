@@ -29,6 +29,16 @@ export function LoadingScreen({ hidden }: { hidden: boolean }) {
   const [fontsDone, setFontsDone] = useState(false);
   const [tip, setTip] = useState(0);
 
+  // Hard backstop: the loader must ALWAYS finish, even if the parent never
+  // flips `hidden` (stale wiring / any edge case). The engine starts on mount,
+  // so by this deadline it is already running — safe to reveal the game.
+  const [forceDone, setForceDone] = useState(false);
+  useEffect(() => {
+    const t = window.setTimeout(() => setForceDone(true), 3000);
+    return () => window.clearTimeout(t);
+  }, []);
+  const done = hidden || forceDone;
+
   // real gates: platform SDK + webfonts
   useEffect(() => {
     let alive = true;
@@ -55,7 +65,7 @@ export function LoadingScreen({ hidden }: { hidden: boolean }) {
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      const cap = hidden ? 100 : fontsDone ? 82 : sdkDone ? 50 : 28;
+      const cap = done ? 100 : fontsDone ? 82 : sdkDone ? 50 : 28;
       setProg((p) => {
         const target = Math.max(p, Math.min(cap, 100));
         const speed = target - p > 14 ? 38 : 10;
@@ -65,7 +75,7 @@ export function LoadingScreen({ hidden }: { hidden: boolean }) {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [hidden, sdkDone, fontsDone]);
+  }, [done, sdkDone, fontsDone]);
 
   const step = prog >= 99.5 ? 4 : prog >= 82 ? 3 : prog >= 52 ? 2 : prog >= 28 ? 1 : 0;
   const pct = Math.round(prog);
@@ -73,9 +83,9 @@ export function LoadingScreen({ hidden }: { hidden: boolean }) {
   return (
     <div
       className={`absolute inset-0 z-40 flex flex-col items-center justify-center overflow-hidden bg-[#070c18] transition-opacity duration-500 ${
-        hidden ? "pointer-events-none opacity-0" : "opacity-100"
+        done ? "pointer-events-none opacity-0" : "opacity-100"
       }`}
-      aria-busy={!hidden}
+      aria-busy={!done}
     >
       {/* ambient backdrop */}
       <div

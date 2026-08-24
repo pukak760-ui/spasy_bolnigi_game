@@ -519,7 +519,7 @@ export default function App() {
       onGarage={() => leaveRun("garage")}
       onToggleMute={toggleMute}
     />
-    {screen === "game" && <LoadingScreen hidden={gameReady} />}
+    {screen === "game" && <LoadingScreen key={runId} hidden={gameReady} />}
     </>
   );
 }

@@ -310,8 +310,13 @@ export class Game {
       const dt = clamp((now - this.last) / 1000, 0, 0.045);
       this.last = now;
       if (!this.paused && this.state === "run") {
-        this.update(dt);
-        this.render();
+        try {
+          this.update(dt);
+          this.render();
+        } catch (e) {
+          // a single-frame error must never kill the loop (that would freeze the game)
+          console.error("[engine] frame error", e);
+        }
         if (!this.loadedOnce) {
           this.loadedOnce = true;
           this.cb.onLoaded?.();
