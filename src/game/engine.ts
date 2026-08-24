@@ -92,6 +92,19 @@ interface Car {
   color: string;
   yieldT: number;
   crashCd: number;
+  ang: number; // smoothed visual heading (radians)
+  turn: {
+    t: number;
+    sx: number;
+    sy: number;
+    tx: number;
+    ty: number;
+    a0: number;
+    a1: number;
+    dir: number;
+    lane: number;
+  } | null;
+  stuckT: number; // anti-deadlock timer (cars jammed into each other)
 }
 
 // lane offsets per direction (right-hand traffic)
@@ -102,6 +115,16 @@ const laneFor = (dir: number): number => {
   if (dir === 2) return inner ? LANE_SLOW : LANE_FAST; // west → north half
   return inner ? LANE_ON1 : LANE_ON2; // north → east half
 };
+
+// shortest-path angle interpolation — lets traffic cars rotate smoothly
+const angLerp = (a: number, b: number, k: number) => {
+  let diff = b - a;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  return a + diff * k;
+};
+
+const dirAngle = (dir: number) => Math.atan2(DIRS[dir].y, DIRS[dir].x);
 
 interface Powerup {
   x: number;
@@ -606,51 +629,90 @@ export class Game {
       c.crashCd = Math.max(0, c.crashCd - dt);
       const d = DIRS[c.dir];
 
-      // target speed: yield to ambulance ahead / horn / car ahead
-      let target = c.cruise;
-      const dToPlayer = dist(c.x, c.y, this.px, this.py);
-      const aheadDot = (this.px - c.x) * d.x + (this.py - c.y) * d.y;
-      const lateral = Math.abs((this.px - c.x) * d.y - (this.py - c.y) * d.x);
-      if (c.yieldT > 0 || (dToPlayer < 150 && aheadDot > 0 && lateral < 46)) target = 0;
-      for (const o of this.cars) {
-        if (o === c) continue;
-        const od = dist(c.x, c.y, o.x, o.y);
-        const oAhead = (o.x - c.x) * d.x + (o.y - c.y) * d.y;
-        if (od < 52 && oAhead > 0) target = 0;
-      }
-      const dv = target - c.speed;
-      c.speed += clamp(dv, -300 * dt, 120 * dt);
-
-      c.x += d.x * c.speed * dt;
-      c.y += d.y * c.speed * dt;
-
-      // strict lane keeping: the fixed axis is always pulled back to its lane,
-      // so cars can never leave the asphalt (even after being bumped)
-      const laneK = Math.min(1, dt * 6);
-      if (c.dir === 1 || c.dir === 3) {
-        const grid = Math.round(c.x / B) * B;
-        c.x += (grid + c.lane - c.x) * laneK;
+      if (c.turn) {
+        // ----- smooth intersection arc: the car glides along a short curve
+        // from its old lane onto the new one (no teleporting, ever) -----
+        c.turn.t += dt * 2.1; // ~0.5 s maneuver
+        const k = Math.min(1, c.turn.t);
+        const e = k * k * (3 - 2 * k); // smoothstep easing
+        c.x = c.turn.sx + (c.turn.tx - c.turn.sx) * e;
+        c.y = c.turn.sy + (c.turn.ty - c.turn.sy) * e;
+        c.speed = Math.min(c.speed, c.cruise * 0.55);
+        c.ang = angLerp(c.turn.a0, c.turn.a1, e);
+        if (k >= 1) {
+          c.dir = c.turn.dir;
+          c.lane = c.turn.lane;
+          c.ang = c.turn.a1;
+          c.turn = null;
+        }
       } else {
-        const grid = Math.round(c.y / B) * B;
-        c.y += (grid + c.lane - c.y) * laneK;
+        // ----- target speed: ambulance ahead / horn yield / car ahead -----
+        let target = c.cruise;
+        const dToPlayer = dist(c.x, c.y, this.px, this.py);
+        const aheadDot = (this.px - c.x) * d.x + (this.py - c.y) * d.y;
+        const lateral = Math.abs((this.px - c.x) * d.y - (this.py - c.y) * d.x);
+        let blocked = dToPlayer < 150 && aheadDot > 0 && lateral < 46;
+        if (!blocked) {
+          for (const o of this.cars) {
+            if (o === c || o.turn) continue;
+            const od = dist(c.x, c.y, o.x, o.y);
+            const oAhead = (o.x - c.x) * d.x + (o.y - c.y) * d.y;
+            if (od < 52 && oAhead > 0) {
+              blocked = true;
+              break;
+            }
+          }
+        }
+        // anti-deadlock: a car wedged against another (overlapped after a turn)
+        // would otherwise stop forever — after a while it gently pushes through
+        if (blocked) {
+          c.stuckT += dt;
+          if (c.stuckT > 2.2) blocked = false;
+        } else {
+          c.stuckT = 0;
+        }
+        if (c.yieldT > 0 || blocked) target = 0;
+        const dv = target - c.speed;
+        c.speed += clamp(dv, -300 * dt, 120 * dt);
+
+        c.x += d.x * c.speed * dt;
+        c.y += d.y * c.speed * dt;
+
+        // fixed axis: eased pull toward the lane — or toward the roadside
+        // shoulder while yielding to the ambulance horn
+        const laneK = Math.min(1, dt * 3.6);
+        if (c.dir === 1 || c.dir === 3) {
+          const grid = Math.round(c.x / B) * B;
+          const lanePos = grid + c.lane;
+          const shoulder = grid + Math.sign(c.lane) * (HALF - 18);
+          c.x += ((c.yieldT > 0 ? shoulder : lanePos) - c.x) * laneK;
+        } else {
+          const grid = Math.round(c.y / B) * B;
+          const lanePos = grid + c.lane;
+          const shoulder = grid + Math.sign(c.lane) * (HALF - 18);
+          c.y += ((c.yieldT > 0 ? shoulder : lanePos) - c.y) * laneK;
+        }
+
+        // intersection turning
+        if (c.dir === 0) {
+          const nx = (Math.floor(c.x / B) + 1) * B;
+          if (c.x >= nx - 2) this.turnCar(c, nx, c.y, [0, 1, 3]);
+        } else if (c.dir === 1) {
+          const ny = (Math.floor(c.y / B) + 1) * B;
+          if (c.y >= ny - 2) this.turnCar(c, c.x, ny, [1, 0, 2]);
+        } else if (c.dir === 2) {
+          const nx = Math.floor(c.x / B) * B;
+          if (c.x <= nx + 2) this.turnCar(c, nx, c.y, [2, 1, 3]);
+        } else {
+          const ny = Math.floor(c.y / B) * B;
+          if (c.y <= ny + 2) this.turnCar(c, c.x, ny, [3, 0, 2]);
+        }
+
+        // visual heading eases toward the lane direction
+        c.ang = angLerp(c.ang, dirAngle(c.dir), Math.min(1, dt * 7));
       }
 
-      // intersection turning
-      if (c.dir === 0) {
-        const nx = (Math.floor(c.x / B) + 1) * B;
-        if (c.x >= nx - 2) this.turnCar(c, nx, c.y, [0, 1, 3]);
-      } else if (c.dir === 1) {
-        const ny = (Math.floor(c.y / B) + 1) * B;
-        if (c.y >= ny - 2) this.turnCar(c, c.x, ny, [1, 0, 2]);
-      } else if (c.dir === 2) {
-        const nx = Math.floor(c.x / B) * B;
-        if (c.x <= nx + 2) this.turnCar(c, nx, c.y, [2, 1, 3]);
-      } else {
-        const ny = Math.floor(c.y / B) * B;
-        if (c.y <= ny + 2) this.turnCar(c, c.x, ny, [3, 0, 2]);
-      }
-
-      // collision with ambulance
+      // collision with ambulance (checked even mid-turn)
       const dd = dist(c.x, c.y, this.px, this.py);
       if (dd < 46) {
         const nx = (this.px - c.x) / (dd || 1);
@@ -660,6 +722,10 @@ export class Game {
         this.py += ny * push * 0.7;
         c.x -= nx * push * 0.3;
         c.y -= ny * push * 0.3;
+        if (c.turn) {
+          // a bumped car aborts its maneuver and slides back to its old lane
+          c.turn = null;
+        }
         if (Math.abs(this.speed) > 120 && c.crashCd <= 0) {
           c.crashCd = 1.2;
           this.crash();
@@ -680,13 +746,44 @@ export class Game {
   private turnCar(c: Car, ix: number, iy: number, options: number[]) {
     const straight = options[0];
     const choice = Math.random() < 0.62 ? straight : options[1 + Math.floor(Math.random() * (options.length - 1))];
-    c.dir = choice;
-    c.lane = laneFor(choice);
-    // snap the free axis just past the intersection line so the car commits
-    if (choice === 0) c.x = ix + 2;
-    else if (choice === 1) c.y = iy + 2;
-    else if (choice === 2) c.x = ix - 2;
-    else c.y = iy - 2;
+    if (choice === straight) {
+      // going straight: just commit the free axis past the intersection line
+      if (straight === 0) c.x = ix + 2;
+      else if (straight === 1) c.y = iy + 2;
+      else if (straight === 2) c.x = ix - 2;
+      else c.y = iy - 2;
+      return;
+    }
+    // real turn: glide along a short arc onto the target lane
+    const gx = Math.round(ix / B) * B;
+    const gy = Math.round(iy / B) * B;
+    const lane = laneFor(choice);
+    let tx: number;
+    let ty: number;
+    if (choice === 0) {
+      tx = gx + 34;
+      ty = gy + lane;
+    } else if (choice === 1) {
+      tx = gx + lane;
+      ty = gy + 34;
+    } else if (choice === 2) {
+      tx = gx - 34;
+      ty = gy + lane;
+    } else {
+      tx = gx + lane;
+      ty = gy - 34;
+    }
+    c.turn = {
+      t: 0,
+      sx: c.x,
+      sy: c.y,
+      tx,
+      ty,
+      a0: c.ang,
+      a1: dirAngle(choice),
+      dir: choice,
+      lane,
+    };
   }
 
   private crash() {
@@ -723,12 +820,19 @@ export class Game {
     // patients bleed faster, so upgrades and speed become essential
     const drainScale = 1 + (this.level - 1) * 0.1 + this.time * 0.0022;
 
-    // spawn logic
-    this.spawnT -= dt;
-    const maxWaiting = Math.min(4, 1 + Math.ceil(this.level * 0.6));
-    if (this.spawnT <= 0 && this.patients.length < maxWaiting) {
-      this.spawnT = clamp(8.5 - this.level * 0.55 - this.time * 0.012, 2.6, 8.5);
-      this.spawnPatient(false);
+    // spawn logic: the dispatcher keeps ONE active call at a time (from shift 6
+    // on — two), so calls never pile up on the player. While a patient waits,
+    // nothing new appears; the next call arrives a couple of seconds AFTER the
+    // current patient is picked up (or lost), exactly as requested.
+    const maxWaiting = this.level >= 6 ? 2 : 1;
+    if (this.patients.length >= maxWaiting) {
+      this.spawnT = 2.4; // pre-armed: the next call comes right after boarding
+    } else {
+      this.spawnT -= dt;
+      if (this.spawnT <= 0) {
+        this.spawnT = 2.4;
+        this.spawnPatient(false);
+      }
     }
 
     for (let i = this.patients.length - 1; i >= 0; i--) {
@@ -1022,6 +1126,9 @@ export class Game {
         color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)],
         yieldT: 0,
         crashCd: 0,
+        ang: dirAngle(dir),
+        turn: null,
+        stuckT: 0,
       });
       return;
     }
@@ -1295,11 +1402,10 @@ export class Game {
       ctx.fill();
     }
 
-    // traffic
+    // traffic (visual heading is smoothed, so turns look like real maneuvers)
     for (const c of this.cars) {
       if (!inView(c.x, c.y)) continue;
-      const ang = Math.atan2(DIRS[c.dir].y, DIRS[c.dir].x);
-      drawTrafficCar(ctx, c.x, c.y, ang, c.color, c.speed < c.cruise * 0.4, night);
+      drawTrafficCar(ctx, c.x, c.y, c.ang, c.color, c.speed < c.cruise * 0.4, night);
     }
 
     // horn shockwave
