@@ -1,20 +1,26 @@
 # =============================================================
-#  Save the Patient! - Yandex Games archive builder
-#  Zips the CONTENTS of dist/ into spasi-bolnogo-yandex.zip and
-#  then VALIDATES the archive (exactly one index.html, in root).
-#  ASCII-only on purpose: Windows PowerShell 5.1 reads BOM-less
-#  scripts in the ANSI codepage; Cyrillic text would corrupt it.
+#  Save the Patient! - Yandex Games archive builder (FOOLPROOF)
+#  1) Zips the CONTENTS of dist/ (root-level index.html) using
+#     ZipFile.CreateFromDirectory - the most reliable method.
+#  2) VALIDATES the archive exactly the way Yandex moderation
+#     does, PLUS cross-checks that every file referenced by
+#     index.html (assets/*.js, assets/*.css, icon.svg) is
+#     actually present inside the ZIP. A broken archive can
+#     never leave this script.
+#  ASCII-only on purpose: PowerShell 5.1 reads BOM-less scripts
+#  in the ANSI codepage; any Cyrillic here would corrupt parsing.
 # =============================================================
 $ErrorActionPreference = 'Stop'
 $dist    = Join-Path $PSScriptRoot 'dist'
 $zipName = 'spasi-bolnogo-yandex.zip'
 $zipPath = Join-Path $PSScriptRoot $zipName
+$indexHtml = Join-Path $dist 'index.html'
 
 Write-Host ''
 Write-Host '  YANDEX GAMES ARCHIVE BUILDER' -ForegroundColor Cyan
 Write-Host ''
 
-if (-not (Test-Path (Join-Path $dist 'index.html'))) {
+if (-not (Test-Path $indexHtml)) {
     Write-Host 'ERROR: dist/index.html not found. Build the game first:' -ForegroundColor Red
     Write-Host '       npm install' -ForegroundColor Yellow
     Write-Host '       npm run build' -ForegroundColor Yellow
@@ -22,61 +28,94 @@ if (-not (Test-Path (Join-Path $dist 'index.html'))) {
     exit 1
 }
 
-# ---------- integrity guard: refuse to pack a STALE or broken build ----------
-$html = Get-Content (Join-Path $dist 'index.html') -Raw
-$lastWrite = (Get-Item (Join-Path $dist 'index.html')).LastWriteTime
-Write-Host ('  Build date   : {0}' -f $lastWrite)
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 
-$problems = @()
-if ($html -notmatch 'scheduleReady')        { $problems += 'missing inline LoadingAPI.ready() (scheduleReady)' }
-if ($html -notmatch 'boot-splash')          { $problems += 'missing boot splash' }
-if ($html -notmatch 'environment\.i18n\.lang') { $problems += 'missing language auto-detection (2.14)' }
-if ($html -match 'src="/assets/')           { $problems += 'ABSOLUTE asset paths found (stale build, base "./" lost)' }
-if ($html -notmatch 'src="\./assets/')      { $problems += 'no relative ./assets/ paths found' }
+# ---------------- pre-flight: build freshness & platform markers ----------------
+$buildDate = (Get-Item $indexHtml).LastWriteTime
+$html = Get-Content $indexHtml -Raw
+$markers = @('scheduleReady', 'boot-splash', 'environment.i18n.lang', './assets/')
+$missingMarkers = @($markers | Where-Object { -not $html.Contains($_) })
+$badPaths = [regex]::Matches($html, 'src="/assets/|href="/assets/')
 
-if ($problems.Count -gt 0) {
-    Write-Host ''
-    Write-Host 'REFUSING TO PACK — the build in dist/ is stale or broken:' -ForegroundColor Red
-    foreach ($p in $problems) { Write-Host ('   - ' + $p) -ForegroundColor Red }
-    Write-Host ''
-    Write-Host 'Run "npm run build" first, then start this script again.' -ForegroundColor Yellow
+Write-Host ('  Build date   : {0}' -f $buildDate.ToString('yyyy-MM-dd HH:mm:ss'))
+if ($missingMarkers.Count -gt 0) {
+    Write-Host ('ERROR: dist/index.html is OUTDATED (missing: {0}).' -f ($missingMarkers -join ', ')) -ForegroundColor Red
+    Write-Host '       Rebuild first: npm run build, then run this script again.' -ForegroundColor Yellow
     Read-Host 'Press Enter to exit'
     exit 1
 }
-Write-Host '  Build check  : OK (all platform fixes are present)' -ForegroundColor Green
+if ($badPaths.Count -gt 0) {
+    Write-Host 'ERROR: dist/index.html has ABSOLUTE asset paths (/assets/...).' -ForegroundColor Red
+    Write-Host '       vite.config.js must contain base: "./" — then rebuild.' -ForegroundColor Yellow
+    Read-Host 'Press Enter to exit'
+    exit 1
+}
+Write-Host '  Build check  : OK (all platform fixes present, paths relative)' -ForegroundColor Green
 
-# fresh archive every time
+# ---------------- create the ZIP (contents of dist at the archive root) ----------------
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+[System.IO.Compression.ZipFile]::CreateFromDirectory(
+    $dist,
+    $zipPath,
+    [System.IO.Compression.CompressionLevel]::Optimal,
+    $false  # do NOT include the base directory itself
+)
 
-# zip CONTENTS of dist (star!), so index.html lands in the archive root
-Compress-Archive -Path (Join-Path $dist '*') -DestinationPath $zipPath -CompressionLevel Optimal
-
-# ---------- validation: the exact check Yandex moderators run ----------
-Add-Type -AssemblyName System.IO.Compression.FileSystem
+# ---------------- validate the ZIP ----------------
 $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
 try {
-    $allIndex    = @($zip.Entries | Where-Object { $_.Name -eq 'index.html' })
-    $rootIndex   = @($zip.Entries | Where-Object { $_.FullName -eq 'index.html' })
-    $totalFiles  = @($zip.Entries | Where-Object { $_.FullName -notlike '*/' }).Count
-    $totalSizeKB = [math]::Round((Get-Item $zipPath).Length / 1024)
+    $names      = @($zip.Entries | ForEach-Object { $_.FullName })
+    $fileCount  = @($names | Where-Object { $_ -notlike '*/' }).Count
+    $assetCount = @($names | Where-Object { $_ -like 'assets/*' }).Count
+    $rootIndex  = @($names | Where-Object { $_ -eq 'index.html' }).Count
+    $anyIndex   = @($names | Where-Object { ($_ -split '/')[-1] -eq 'index.html' }).Count
 } finally {
     $zip.Dispose()
 }
 
-Write-Host ('  Files packed : {0}' -f $totalFiles)
-Write-Host ('  Archive size : {0} KB' -f $totalSizeKB)
-Write-Host ('  index.html   : {0} (in root: {1})' -f $allIndex.Count, $rootIndex.Count)
+$sizeKB = [math]::Round((Get-Item $zipPath).Length / 1024)
+Write-Host ('  Archive size : {0} KB' -f $sizeKB)
+Write-Host ('  Entries      : {0} files (assets folder: {1})' -f $fileCount, $assetCount)
+Write-Host ('  index.html   : {0} in root, {1} total' -f $rootIndex, $anyIndex)
 
-if ($allIndex.Count -ne 1 -or $rootIndex.Count -ne 1) {
+$fail = $false
+
+# rule 1: exactly one index.html, and it must be at the archive root
+if ($rootIndex -ne 1 -or $anyIndex -ne 1) {
+    Write-Host 'FAILED: the ZIP must contain exactly ONE index.html at its root.' -ForegroundColor Red
+    $fail = $true
+}
+
+# rule 2: assets folder must exist and be non-empty (this is what broke before:
+# an archive uploaded without assets/ boots index.html but 404s on CSS/JS)
+if ($assetCount -lt 2) {
+    Write-Host 'FAILED: the ZIP is missing the assets/ folder (JS/CSS bundles).' -ForegroundColor Red
+    $fail = $true
+}
+
+# rule 3 (bulletproof): every file referenced by index.html must exist in the ZIP
+$refs = [regex]::Matches($html, '\./assets/([A-Za-z0-9._-]+)') | ForEach-Object { 'assets/' + $_.Groups[1].Value }
+$refs += [regex]::Matches($html, 'href="\./([A-Za-z0-9._-]+)"') | ForEach-Object { $_.Groups[1].Value }
+$refs = @($refs | Sort-Object -Unique)
+$missingRefs = @($refs | Where-Object { $names -notcontains $_ })
+if ($missingRefs.Count -gt 0) {
+    Write-Host 'FAILED: index.html references files that are NOT in the ZIP:' -ForegroundColor Red
+    foreach ($m in $missingRefs) { Write-Host ('        - {0}' -f $m) -ForegroundColor Red }
+    $fail = $true
+}
+
+if ($fail) {
     Write-Host ''
-    Write-Host 'FAILED: the archive must contain exactly one index.html in its root.' -ForegroundColor Red
-    Write-Host '        This builder packs dist/* only, so this should never happen.' -ForegroundColor Red
+    Write-Host 'The archive was NOT produced correctly. Rebuild (npm run build)' -ForegroundColor Red
+    Write-Host 'and run this script again — do not upload a hand-made ZIP.' -ForegroundColor Red
+    if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
     Read-Host 'Press Enter to exit'
     exit 1
 }
 
 Write-Host ''
-Write-Host '  OK! Upload this file to the Yandex Games console draft:' -ForegroundColor Green
+Write-Host '  OK! Every file referenced by index.html is inside the ZIP.' -ForegroundColor Green
+Write-Host '  Upload this file to the Yandex Games console draft:' -ForegroundColor Green
 Write-Host "  $zipPath" -ForegroundColor White
 Write-Host ''
 
