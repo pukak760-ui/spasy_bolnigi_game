@@ -1,19 +1,28 @@
 # =============================================================
 #  Save the Patient! - Yandex Games archive builder (FOOLPROOF)
-#  1) Zips the CONTENTS of dist/ (root-level index.html) using
-#     ZipFile.CreateFromDirectory - the most reliable method.
-#  2) VALIDATES the archive exactly the way Yandex moderation
-#     does, PLUS cross-checks that every file referenced by
-#     index.html (assets/*.js, assets/*.css, icon.svg) is
-#     actually present inside the ZIP. A broken archive can
-#     never leave this script.
+#
+#  Builds spasi-bolnogo-yandex.zip from the CONTENTS of dist/
+#  (index.html in the archive root) and then VALIDATES it exactly
+#  like Yandex moderation does. A broken archive can never leave
+#  this script.
+#
+#  IMPORTANT - why the ZIP is built file-by-file:
+#  On PowerShell 5.1 / .NET Framework (Windows), both
+#  Compress-Archive and ZipFile.CreateFromDirectory write entry
+#  names with BACKSLASHES ("assets\index-....css"). Browsers and
+#  the Yandex platform expect FORWARD slashes ("assets/..."), so
+#  the game 404'd on its own CSS/JS. This script creates every
+#  entry manually and forces "/" in entry names - backslashes can
+#  never leak into the archive.
+#
 #  ASCII-only on purpose: PowerShell 5.1 reads BOM-less scripts
-#  in the ANSI codepage; any Cyrillic here would corrupt parsing.
+#  in the ANSI codepage, so any non-ASCII character here could
+#  corrupt parsing or console output.
 # =============================================================
 $ErrorActionPreference = 'Stop'
-$dist    = Join-Path $PSScriptRoot 'dist'
-$zipName = 'spasi-bolnogo-yandex.zip'
-$zipPath = Join-Path $PSScriptRoot $zipName
+$dist      = Join-Path $PSScriptRoot 'dist'
+$zipName   = 'spasi-bolnogo-yandex.zip'
+$zipPath   = Join-Path $PSScriptRoot $zipName
 $indexHtml = Join-Path $dist 'index.html'
 
 Write-Host ''
@@ -28,6 +37,7 @@ if (-not (Test-Path $indexHtml)) {
     exit 1
 }
 
+Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 # ---------------- pre-flight: build freshness & platform markers ----------------
@@ -46,25 +56,40 @@ if ($missingMarkers.Count -gt 0) {
 }
 if ($badPaths.Count -gt 0) {
     Write-Host 'ERROR: dist/index.html has ABSOLUTE asset paths (/assets/...).' -ForegroundColor Red
-    Write-Host '       vite.config.js must contain base: "./" — then rebuild.' -ForegroundColor Yellow
+    Write-Host '       vite.config.js must contain base: "./" - then rebuild.' -ForegroundColor Yellow
     Read-Host 'Press Enter to exit'
     exit 1
 }
 Write-Host '  Build check  : OK (all platform fixes present, paths relative)' -ForegroundColor Green
 
-# ---------------- create the ZIP (contents of dist at the archive root) ----------------
+# ---------------- create the ZIP manually, one entry per file ----------------
+# Entry names are forced to FORWARD slashes (see header). $false = do not
+# include the dist folder itself, so index.html lands in the archive root.
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
-[System.IO.Compression.ZipFile]::CreateFromDirectory(
-    $dist,
-    $zipPath,
-    [System.IO.Compression.CompressionLevel]::Optimal,
-    $false  # do NOT include the base directory itself
-)
+$distFull = (Resolve-Path $dist).Path.TrimEnd('\')
+$archive = [System.IO.Compression.ZipFile]::Open($zipPath, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+    $allFiles = Get-ChildItem -Path $dist -Recurse -File
+    foreach ($f in $allFiles) {
+        $rel = $f.FullName.Substring($distFull.Length + 1).Replace('\', '/')
+        $entry = $archive.CreateEntry($rel, [System.IO.Compression.CompressionLevel]::Optimal)
+        $es = $entry.Open()
+        try {
+            $bytes = [System.IO.File]::ReadAllBytes($f.FullName)
+            $es.Write($bytes, 0, $bytes.Length)
+        } finally {
+            $es.Dispose()
+        }
+    }
+} finally {
+    $archive.Dispose()
+}
 
 # ---------------- validate the ZIP ----------------
 $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
 try {
-    $names      = @($zip.Entries | ForEach-Object { $_.FullName })
+    # normalize defensively, even though we just wrote them with "/"
+    $names      = @($zip.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
     $fileCount  = @($names | Where-Object { $_ -notlike '*/' }).Count
     $assetCount = @($names | Where-Object { $_ -like 'assets/*' }).Count
     $rootIndex  = @($names | Where-Object { $_ -eq 'index.html' }).Count
@@ -107,14 +132,15 @@ if ($missingRefs.Count -gt 0) {
 if ($fail) {
     Write-Host ''
     Write-Host 'The archive was NOT produced correctly. Rebuild (npm run build)' -ForegroundColor Red
-    Write-Host 'and run this script again — do not upload a hand-made ZIP.' -ForegroundColor Red
+    Write-Host 'and run this script again. Never upload a hand-made ZIP.' -ForegroundColor Red
     if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
     Read-Host 'Press Enter to exit'
     exit 1
 }
 
 Write-Host ''
-Write-Host '  OK! Every file referenced by index.html is inside the ZIP.' -ForegroundColor Green
+Write-Host '  OK! Every file referenced by index.html is inside the ZIP,' -ForegroundColor Green
+Write-Host '  with correct forward-slash paths. Safe to upload.' -ForegroundColor Green
 Write-Host '  Upload this file to the Yandex Games console draft:' -ForegroundColor Green
 Write-Host "  $zipPath" -ForegroundColor White
 Write-Host ''
