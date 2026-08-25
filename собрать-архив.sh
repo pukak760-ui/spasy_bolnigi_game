@@ -27,7 +27,24 @@ echo "  Проверка сборки: OK (фиксы на месте, пути 
 # Санитайзер: вырезает внешние http(s):// ссылки из сборки (оставляя
 # http://www.w3.org — это SVG-неймспейсы, а не сетевые запросы). Без этого
 # модерация Яндекса отклонит архив: «обнаружена ссылка на сервисное хранилище».
-node sanitize-dist.mjs || { echo "ОШИБКА: санитайзер не отработал (нужен Node.js)"; exit 1; }
+# Работает на python3 (Node.js не требуется).
+python3 - <<'PY'
+import os, re
+total = 0
+for root, _, files in os.walk('dist'):
+    for name in files:
+        if not name.lower().endswith(('.js', '.css', '.html', '.svg')):
+            continue
+        p = os.path.join(root, name)
+        with open(p, encoding='utf-8') as fh:
+            text = fh.read()
+        clean, n = re.subn(r'https?://(?!www\.w3\.org)', 'about:blank#', text)
+        if n:
+            with open(p, 'w', encoding='utf-8') as fh:
+                fh.write(clean)
+            total += n
+print(f"  Санитайзер: обезврежено внешних ссылок: {total}")
+PY
 
 rm -f spasi-bolnogo-yandex.zip
 

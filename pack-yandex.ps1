@@ -67,12 +67,21 @@ Write-Host '  Build check  : OK (all platform fixes present, paths relative)' -F
 # storage ("service storage" rule). Its scanner greps every file in the ZIP,
 # so even license-banner URLs inside the minified bundle would trigger it.
 # The sanitizer keeps http://www.w3.org/* (SVG namespace ids, never fetched).
-node (Join-Path $PSScriptRoot 'sanitize-dist.mjs')
-if ($LASTEXITCODE -ne 0) {
-    Write-Host 'ERROR: URL sanitizer failed. Make sure Node.js is installed.' -ForegroundColor Red
-    Read-Host 'Press Enter to exit'
-    exit 1
+# Implemented inline (pure .NET) so it works WITHOUT Node.js on PATH.
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$textExts  = @('.js', '.css', '.html', '.svg')
+$sanitized = 0
+foreach ($f in Get-ChildItem -Path $dist -Recurse -File) {
+    if ($textExts -notcontains $f.Extension.ToLower()) { continue }
+    $text  = [System.IO.File]::ReadAllText($f.FullName, [System.Text.Encoding]::UTF8)
+    $count = [regex]::Matches($text, 'https?://(?!www\.w3\.org)').Count
+    if ($count -gt 0) {
+        $clean = [regex]::Replace($text, 'https?://(?!www\.w3\.org)', 'about:blank#')
+        [System.IO.File]::WriteAllText($f.FullName, $clean, $utf8NoBom)
+        $sanitized += $count
+    }
 }
+Write-Host ('  Sanitize     : {0} external URL(s) neutralized in dist/' -f $sanitized) -ForegroundColor Cyan
 
 # ---------------- create the ZIP manually, one entry per file ----------------
 # Entry names are forced to FORWARD slashes (see header). $false = do not
