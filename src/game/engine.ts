@@ -677,30 +677,49 @@ export class Game {
       let desired = c.cruise * (1 - 0.62 * clamp(off / 1.05, 0, 1));
       if (c.turn) desired = Math.min(desired, c.cruise * 0.55);
 
-      // yield to the ambulance ahead / the horn / a car ahead
       const dToPlayer = dist(c.x, c.y, this.px, this.py);
       const aheadDot = (this.px - c.x) * d.x + (this.py - c.y) * d.y;
       const lateral = Math.abs((this.px - c.x) * d.y - (this.py - c.y) * d.x);
-      let blocked = dToPlayer < 150 && aheadDot > 0 && lateral < 46;
-      if (!blocked) {
-        for (const o of this.cars) {
-          if (o === c) continue;
-          const od = dist(c.x, c.y, o.x, o.y);
-          const oAhead = (o.x - c.x) * d.x + (o.y - c.y) * d.y;
-          if (od < 52 && oAhead > 0) {
-            blocked = true;
-            break;
+
+      if (c.yieldT > 0) {
+        // ---- YIELD PHASES (horn): ----
+        // 1) not on the shoulder yet → keep rolling at moderate speed while
+        //    steering toward the shoulder line (zero speed can't pull over!);
+        // 2) on the shoulder → STOP and wait; the yield timer is extended
+        //    while the ambulance is still close, so the car only merges back
+        //    after the player has REALLY passed;
+        // 3) timer out + ambulance gone → steer back into the lane (handled
+        //    by the target point above) and accelerate.
+        const vertY = c.dir === 1 || c.dir === 3;
+        const gridY = Math.round((vertY ? c.x : c.y) / B) * B;
+        const shoulderY = gridY + (c.dir === 0 || c.dir === 3 ? RW - 10 : 10);
+        const onShoulder = Math.abs((vertY ? c.x : c.y) - shoulderY) < 13;
+        desired = onShoulder ? 0 : Math.min(desired, 72);
+        // keep out of the way until the ambulance is no longer approaching
+        if (dToPlayer < 360 && aheadDot > -80) c.yieldT = Math.max(c.yieldT, 0.5);
+      } else {
+        // normal traffic: stop for a car ahead or an ambulance in the lane
+        let blocked = dToPlayer < 150 && aheadDot > 0 && lateral < 46;
+        if (!blocked) {
+          for (const o of this.cars) {
+            if (o === c) continue;
+            const od = dist(c.x, c.y, o.x, o.y);
+            const oAhead = (o.x - c.x) * d.x + (o.y - c.y) * d.y;
+            if (od < 52 && oAhead > 0) {
+              blocked = true;
+              break;
+            }
           }
         }
+        // anti-deadlock: a wedged car gently pushes through after a while
+        if (blocked) {
+          c.stuckT += dt;
+          if (c.stuckT > 2.2) blocked = false;
+        } else {
+          c.stuckT = 0;
+        }
+        if (blocked) desired = 0;
       }
-      // anti-deadlock: a wedged car gently pushes through after a while
-      if (blocked) {
-        c.stuckT += dt;
-        if (c.stuckT > 2.2) blocked = false;
-      } else {
-        c.stuckT = 0;
-      }
-      if (c.yieldT > 0 || blocked) desired = 0;
 
       const dv = desired - c.speed;
       c.speed += clamp(dv, -320 * dt, 110 * dt);
@@ -718,7 +737,9 @@ export class Game {
           c.lane = c.turn.lane;
           c.turn = null;
         }
-      } else {
+      } else if (c.yieldT <= 0) {
+        // a car pulling over to the shoulder never initiates a turn —
+        // intersection decisions wait until the ambulance has passed
         this.checkGate(c);
       }
 

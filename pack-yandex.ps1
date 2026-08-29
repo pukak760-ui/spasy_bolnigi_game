@@ -155,7 +155,7 @@ foreach ($tf in $textFiles) {
 }
 if ($extTotal -gt 0) {
     Write-Host ('FAILED: the build still contains {0} external link(s).' -f $extTotal) -ForegroundColor Red
-    Write-Host '        The sanitizer (sanitize-dist.mjs) must have failed to run.' -ForegroundColor Red
+    Write-Host '        The inline URL sanitizer above must have failed to run.' -ForegroundColor Red
     $fail = $true
 }
 
